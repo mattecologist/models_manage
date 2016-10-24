@@ -24,3 +24,4 @@ library (dismo)
 tmin <- getData("worldclim", var = "tmin", res = 10) 
 
 
+
