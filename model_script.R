@@ -43,6 +43,57 @@ plot (wrld_simpl)
 points (sppP[,1:2], pch=20, col="red")
 
 
+######## Create the species data frame
+sppP$pa <- 1
+clim.df <- as.data.frame(extract (biovar, sppP[,1:2]))
+sppDF <- cbind (sppP, clim.df)
+
+######## Create the background data
+temp <- tempfile()
+download.file("http://koeppen-geiger.vu-wien.ac.at/data/Koeppen-Geiger-ASCII.zip",temp)
+data <- read.table(unz(temp, "Koeppen-Geiger-ASCII.txt"))
+unlink(temp)
+
+
+inFile1 <-'Koeppen-Geiger-ASCII.txt'
+#read in data which is as lon,lat,catID
+dF<-read.table(inFile1,header=TRUE,as.is=TRUE)
+#convert to sp SpatialPointsDataFrame
+coordinates(dF) = c("Lon", "Lat")
+# promote to SpatialPixelsDataFrame
+gridded(dF) <- TRUE
+# promote to SpatialGridDataFrame
+sGDF = as(dF, "SpatialGridDataFrame")
+#plotting map
+mapDevice() #create world map shaped window
+mapParams <- mapGriddedData(sGDF
+,catMethod=
+'
+categorical
+'
+,addLegend=FALSE)
+#adding formatted legend
+do.call(addMapLegendBoxes
+,c(mapParams
+,cex=0.8
+,ncol=10
+,x=
+'
+bottom
+'
+,title=
+'
+Koeppen-Geiger Climate Zones
+'
+))
+
+
 #### Maxent
 
 p = a vector of presence (1) and absence (0) data 
+
+
+
+
+
+
