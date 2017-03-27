@@ -21,7 +21,6 @@ dist <- cbind (dat[,c("species",  "decimalLatitude", "decimalLongitude")])
 
 ### loading raster data (example here is the worldclim data)
 ### about a 10 mb download at this resolution for the world.
-
 biovar <- getData("worldclim", var = "bio", res = 10) 
 
 ##  create a reference raster from this, rescale the points to 1 per grid cell 
@@ -40,3 +39,6 @@ data("wrld_simpl")
 ## for the native range we can basically say that region "142" contains the points we are after
 plot (wrld_simpl[wrld_simpl$REGION==142,])
 points (sppP[,1:2], pch=20, col="red")
+
+
+#### so I'll leave this script here
