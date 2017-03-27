@@ -3,16 +3,16 @@
 library (rgbif)
 library (dismo)
 library (maptools)
-
+library (maxnet)
 ##First, lookup the species on GBIF using the rgbif package
 
-head(name_lookup(query = 'Harmonia axyridis', rank="species", return = 'data'))
+head(name_lookup(query = 'Forficula auricularia', rank="species", return = 'data'))
 
-hold.dat <- occ_search(scientificName = "Harmonia axyridis", limit = 20)
+hold.dat <- occ_search(scientificName = "Forficula auricularia", limit = 20)
 
-#23166 records on the 18/10/2016
+#7862 records on the 27/3/2017
 
-key <- name_backbone(name='Harmonia axyridis')$speciesKey
+key <- name_backbone(name='Forficula auricularia')$speciesKey
 # download all the records and plot (based on a ggplot function)
 dat <- occ_search(taxonKey=key, return='data', limit=hold.dat$meta$count)
 gbifmap(dat)
@@ -38,7 +38,11 @@ data("wrld_simpl")
 
 ## for the native range we can basically say that region "142" contains the points we are after
 plot (wrld_simpl[wrld_simpl$REGION==142,])
+
+plot (wrld_simpl)
 points (sppP[,1:2], pch=20, col="red")
 
 
-#### so I'll leave this script here
+#### Maxent
+
+p = a vector of presence (1) and absence (0) data 
