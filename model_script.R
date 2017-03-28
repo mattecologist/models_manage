@@ -5,10 +5,9 @@ library (rgeos)
 library (dismo)
 library (maptools)
 library (maxnet)
+
 ##First, lookup the species on GBIF using the rgbif package
-
 head(name_lookup(query = 'Forficula auricularia', rank="species", return = 'data'))
-
 hold.dat <- occ_search(scientificName = "Forficula auricularia", limit = 20)
 
 #7862 records on the 27/3/2017
@@ -87,10 +86,120 @@ background$pa <- 0
 background.df <- as.data.frame(extract (biovar, background[,1:2]))
 bgDF <- cbind (background, background.df)
 
+forficula <- rbind (sppDF, bgDF)
+
+forificula <- forficula[complete.cases(forficula),]
+
+forficula <- na.omit (forficula)
+
+###################################################################################################
+## Using BIOMOD for now - might update to the Maxnet package at some point...
+
+library (biomod2)
+###################################################################################################
+##GLOBAL MODELLING OPTIONS
+###################################################################################################
+myBiomodOption <- BIOMOD_ModelingOptions(
+  MAXENT.Phillips = list( path_to_maxent.jar = "./maxent/maxent.jar",
+                 maximumiterations = 200,
+                 visible = FALSE,
+                 linear = FALSE,
+                 quadratic = FALSE,
+                 product = FALSE,
+                 threshold = FALSE,
+                 hinge = TRUE,
+                 lq2lqptthreshold = 80,
+                 l2lqthreshold = 10,
+                 hingethreshold = 15,
+                 #beta_threshold = -1, #numeric (default -1.0), regularization parameter to be applied to all linear, quadratic and product features; negative value enables automatic setting
+                 beta_categorical = -1,
+                 beta_lqp = -1,
+                 beta_hinge = 2,
+                 defaultprevalence = 0.5))
+
+
+###################################################################################################
+## GLOBAL DISTRIBUTION MODELLING
+###################################################################################################
+
+
+myRespName <-"Forficula auricularia"
+
+myResp <- forficula$pa
+myExpl <- forficula[,4:ncol(forficula)]
+myBiomodData <- BIOMOD_FormatingData(resp.var = myResp,
+                                     expl.var = myExpl,
+                                     resp.xy = forficula[,c("x", "y")],
+                                     resp.name = myRespName)
+
+
+myBiomodModelOut <- BIOMOD_Modeling(
+  myBiomodData,
+  models = c('MAXENT.Phillips'), #just MAxent at this stage
+  models.options = myBiomodOption,
+  NbRunEval=1, # how many runs to do = normally 10, but here is 1
+  DataSplit=70, # data split =100. normally 70 for training, 30 for testing
+  Yweights=NULL,
+  Prevalence=0.5,
+  VarImport=10,
+  #models.eval.meth = c('TSS','ROC'),
+  SaveObj = TRUE,
+  rescal.all.models = TRUE)
+
+
+#write out evaluation metrics
+#eval<- get_evaluations(myBiomodModelOut)
+#write.csv (eval, file=paste0(spp, "_nat_eval.csv"))
+
+#projections
+
+myBiomodProj <- BIOMOD_Projection(modeling.output = myBiomodModelOut,
+                                  new.env = Australia,
+                                  proj.name = 'curr_nat',
+                                  #xy.new.env = cruclim,
+                                  selected.models = 'all',
+                                  #binary.meth = c('TSS', 'ROC'),
+                                  filtered.meth = NULL,
+                                  compress = 'gzip',
+                                  clamping.mask = T,
+                                  do.stack=T)
+
+myEnsemble <- BIOMOD_EnsembleModeling (modeling.output =myBiomodModelOut, 
+                                       chosen.models='all', 
+                                       em.by = 'all',
+                                       eval.metric=c('TSS','ROC'),
+                                       eval.metric.quality.threshold=c(0.5, 0.7), ##this TSS score is low, but sometimes shit is broke
+                                       models.eval.meth = c('TSS', 'ROC'), 
+                                       prob.mean = FALSE,
+                                       prob.ci.alpha = 0.05,
+                                       committee.averaging = FALSE,
+                                       prob.mean.weight = TRUE,
+                                       prob.mean.weight.decay = 'proportional')
+
+ensembleBiomodProj <- BIOMOD_EnsembleForecasting(EM.output=myEnsemble,
+                                                 projection.output=myBiomodProj)
+
+
+
+
+
+
+
 #### Maxent
-p = a vector of presence (1) and absence (0) data 
+
+p <- forficula$pa
+clim <- forficula[,4:ncol(forficula)]
+mod <- maxnet(p, clim)
+plot(mod, type="cloglog")
+mod <- maxnet(p, clim, maxnet.formula(p, clim, classes="lq"))
+plot(mod, "bio1")
+
+#####Predict the model to the climate values for Australia (data.frame)
+e <- extent (112, 155, -45, -10)
+Australia <- crop (biovar, e)
 
 
+####Convert predicted values into spatial points data frame or rasterize
 
 #plotting map (from rworldmap)
 mapDevice() #create world map shaped window
