@@ -1,6 +1,7 @@
 #### GBIF data
 
 library (rgbif)
+library (rgeos)
 library (dismo)
 library (maptools)
 library (maxnet)
@@ -47,52 +48,55 @@ points (sppP[,1:2], pch=20, col="red")
 sppP$pa <- 1
 clim.df <- as.data.frame(extract (biovar, sppP[,1:2]))
 sppDF <- cbind (sppP, clim.df)
+sppDF$layer <- NULL
 
-######## Create the background data
+######## Create the background data (using Koppen-Geiger data from online)
 temp <- tempfile()
 download.file("http://koeppen-geiger.vu-wien.ac.at/data/Koeppen-Geiger-ASCII.zip",temp)
-data <- read.table(unz(temp, "Koeppen-Geiger-ASCII.txt"))
+dF <- read.table(unz(temp, "Koeppen-Geiger-ASCII.txt"), header=TRUE,as.is=TRUE)
 unlink(temp)
 
-
-inFile1 <-'Koeppen-Geiger-ASCII.txt'
-#read in data which is as lon,lat,catID
-dF<-read.table(inFile1,header=TRUE,as.is=TRUE)
 #convert to sp SpatialPointsDataFrame
 coordinates(dF) = c("Lon", "Lat")
 # promote to SpatialPixelsDataFrame
 gridded(dF) <- TRUE
 # promote to SpatialGridDataFrame
 sGDF = as(dF, "SpatialGridDataFrame")
-#plotting map
-mapDevice() #create world map shaped window
-mapParams <- mapGriddedData(sGDF
-,catMethod=
-'
-categorical
-'
-,addLegend=FALSE)
-#adding formatted legend
-do.call(addMapLegendBoxes
-,c(mapParams
-,cex=0.8
-,ncol=10
-,x=
-'
-bottom
-'
-,title=
-'
-Koeppen-Geiger Climate Zones
-'
-))
 
+#convert to spatial polygon
+koppen_poly <-  as(sGDF, "SpatialPolygonsDataFrame") 
+
+
+#determine unique koppen zones
+globdis <- sppP
+coordinates(globdis) <- ~x+y
+
+koppen <- na.exclude (over (globdis, koppen_poly))
+kopp_unique <- unique(koppen$Cls)
+globdis_poly <- koppen_poly[koppen_poly$Cls %in% kopp_unique, ]
+
+#break down Koppen polygons
+Kpoly <- gUnaryUnion(globdis_poly)
+projection(Kpoly) <- CRS('+proj=longlat')
+
+#sample 10000 random cells across backgrounds 
+background <- data.frame (spsample (Kpoly, 10000, type="random"))
+
+background$pa <- 0
+
+background.df <- as.data.frame(extract (biovar, background[,1:2]))
+bgDF <- cbind (background, background.df)
 
 #### Maxent
-
 p = a vector of presence (1) and absence (0) data 
 
 
+
+#plotting map (from rworldmap)
+mapDevice() #create world map shaped window
+mapParams <- mapGriddedData(sGDF ,catMethod='categorical',addLegend=FALSE)
+#adding formatted legend
+do.call(addMapLegendBoxes,c(mapParams,cex=0.8,ncol=10,x='bottom',title='Koeppen-Geiger Climate Zones'))
 
 
 
