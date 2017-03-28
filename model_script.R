@@ -6,7 +6,7 @@
 ## 3. Add in Australian collection data
 ## 4. Niche overlap between Australian and global datasets (if of interest)
 
-t
+
 #### GBIF data
 library (rgbif)
 library (rgeos)
