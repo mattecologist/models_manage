@@ -1,10 +1,18 @@
-#### GBIF data
+#### Matt Hill
 
+## Still to do:
+## 1. Variable selection pre-modelling
+## 2. Variable response curves
+## 3. Add in Australian collection data
+## 4. Niche overlap between Australian and global datasets (if of interest)
+
+t
+#### GBIF data
 library (rgbif)
 library (rgeos)
 library (dismo)
 library (maptools)
-library (maxnet)
+
 
 ##First, lookup the species on GBIF using the rgbif package
 head(name_lookup(query = 'Forficula auricularia', rank="species", return = 'data'))
@@ -36,12 +44,9 @@ length (sppP[,1])
 ## load the worldmap from the maptools package
 data("wrld_simpl")
 
-## for the native range we can basically say that region "142" contains the points we are after
-plot (wrld_simpl[wrld_simpl$REGION==142,])
-
+# Plot the shapefile and points to see how it looks...
 plot (wrld_simpl)
 points (sppP[,1:2], pch=20, col="red")
-
 
 ######## Create the species data frame
 sppP$pa <- 1
@@ -65,7 +70,6 @@ sGDF = as(dF, "SpatialGridDataFrame")
 #convert to spatial polygon
 koppen_poly <-  as(sGDF, "SpatialPolygonsDataFrame") 
 
-
 #determine unique koppen zones
 globdis <- sppP
 coordinates(globdis) <- ~x+y
@@ -80,17 +84,21 @@ projection(Kpoly) <- CRS('+proj=longlat')
 
 #sample 10000 random cells across backgrounds 
 background <- data.frame (spsample (Kpoly, 10000, type="random"))
-
 background$pa <- 0
-
 background.df <- as.data.frame(extract (biovar, background[,1:2]))
 bgDF <- cbind (background, background.df)
 
+## Make modelling data.frame
 forficula <- rbind (sppDF, bgDF)
-
 forificula <- forficula[complete.cases(forficula),]
-
 forficula <- na.omit (forficula)
+
+##### Seeting up prediction data.
+# Predict the model to the climate values for Australia (data.frame)
+e <- extent (112, 155, -45, -10)
+Australia <- crop (biovar, e)
+#convert to a stack
+Australia <- stack(unstack(Australia))
 
 ###################################################################################################
 ## Using BIOMOD for now - might update to the Maxnet package at some point...
@@ -121,8 +129,6 @@ myBiomodOption <- BIOMOD_ModelingOptions(
 ###################################################################################################
 ## GLOBAL DISTRIBUTION MODELLING
 ###################################################################################################
-
-
 myRespName <-"Forficula auricularia"
 
 myResp <- forficula$pa
@@ -135,7 +141,7 @@ myBiomodData <- BIOMOD_FormatingData(resp.var = myResp,
 
 myBiomodModelOut <- BIOMOD_Modeling(
   myBiomodData,
-  models = c('MAXENT.Phillips'), #just MAxent at this stage
+  models = c('MAXENT.Phillips'), #just Maxent at this stage
   models.options = myBiomodOption,
   NbRunEval=1, # how many runs to do = normally 10, but here is 1
   DataSplit=70, # data split =100. normally 70 for training, 30 for testing
@@ -147,9 +153,9 @@ myBiomodModelOut <- BIOMOD_Modeling(
   rescal.all.models = TRUE)
 
 
-#write out evaluation metrics
-#eval<- get_evaluations(myBiomodModelOut)
-#write.csv (eval, file=paste0(spp, "_nat_eval.csv"))
+# examine evaluation metrics
+eval<- get_evaluations(myBiomodModelOut)
+
 
 #projections
 
@@ -180,32 +186,19 @@ ensembleBiomodProj <- BIOMOD_EnsembleForecasting(EM.output=myEnsemble,
                                                  projection.output=myBiomodProj)
 
 
+####### Plot up the map quickly....
+map <- ensembleBiomodProj@proj@val[[1]]
+
+gplot(map) + geom_tile(aes(fill = value)) +
+  scale_fill_gradient(low = 'white', high = 'dark red') +
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  coord_equal()+
+    scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+    scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  ggtitle ("Forficula auricularia Maxent SDM v1")
+  
 
 
-
-
-
-#### Maxent
-
-p <- forficula$pa
-clim <- forficula[,4:ncol(forficula)]
-mod <- maxnet(p, clim)
-plot(mod, type="cloglog")
-mod <- maxnet(p, clim, maxnet.formula(p, clim, classes="lq"))
-plot(mod, "bio1")
-
-#####Predict the model to the climate values for Australia (data.frame)
-e <- extent (112, 155, -45, -10)
-Australia <- crop (biovar, e)
-
-
-####Convert predicted values into spatial points data frame or rasterize
-
-#plotting map (from rworldmap)
-mapDevice() #create world map shaped window
-mapParams <- mapGriddedData(sGDF ,catMethod='categorical',addLegend=FALSE)
-#adding formatted legend
-do.call(addMapLegendBoxes,c(mapParams,cex=0.8,ncol=10,x='bottom',title='Koeppen-Geiger Climate Zones'))
 
 
 
