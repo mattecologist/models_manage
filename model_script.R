@@ -38,19 +38,23 @@ dist <- rbind (dist, ala_dist)
 
 ### APPD data
 #### Note: this comes from a closed database and I had to gain permission to use this data - not for redistribution.
+#### Skip this if you don't have these data.
 
-appd <- read.csv("/home/hil32c/Dropbox/Timing of pest and beneficial GRDC/Earwigs/APPD data/Forficula auricularia_290317.csv", header=T)
+appd <- read.csv("./data/Forficula auricularia_290317.csv", header=T)
 appd_dist <- appd[,c("Scientific.Name", "Latitude...original", "Longitude...original")]
 colnames (appd_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 dist <- rbind (dist, appd_dist)
 
 ### loading raster data (example here is the worldclim data)
 ### about a 10 mb download at this resolution for the world.
-biovar <- getData("worldclim", var = "bio", res = 10) 
+all_biovar <- getData("worldclim", var = "bio", res = 10) 
+
+## subset to most important variables. will expand on this section eventually with methodology.
+biovar <- subset(all_biovar, c("bio2","bio3","bio5","bio6","bio7","bio13","bio14","bio15"))
 
 ##  create a reference raster from this, rescale the points to 1 per grid cell 
 ##  and create a new data.frame with this new distribution dataset.
-refrast <- biovar$bio1
+refrast <- biovar[[1]]
 sppR <- rasterize (dist[,3:2], refrast)
 sppP <- data.frame (rasterToPoints (sppR))
 
@@ -107,7 +111,7 @@ bgDF <- cbind (background, background.df)
 
 ## Make modelling data.frame
 forficula <- rbind (sppDF, bgDF)
-forificula <- forficula[complete.cases(forficula),]
+forficula <- forficula[complete.cases(forficula),]
 forficula <- na.omit (forficula)
 
 ##### Seeting up prediction data.
@@ -136,7 +140,7 @@ myBiomodOption <- BIOMOD_ModelingOptions(
                  lq2lqptthreshold = 80,
                  l2lqthreshold = 10,
                  hingethreshold = 15,
-                 beta_threshold = -1, #numeric (default -1.0), regularization parameter to be applied to all linear, quadratic and product features; negative value enables automatic setting
+                 beta_threshold = 5,#-1, #numeric (default -1.0), regularization parameter to be applied to all linear, quadratic and product features; negative value enables automatic setting
                  beta_categorical = -1,
                  beta_lqp = -1,
                  beta_hinge = 2,
@@ -161,11 +165,11 @@ myBiomodModelOut <- BIOMOD_Modeling(
   models = c('MAXENT.Phillips'), #just Maxent at this stage
   models.options = myBiomodOption,
   NbRunEval=1, # how many runs to do = normally 10, but here is 1
-  DataSplit=70, # data split =100. normally 70 for training, 30 for testing
+  DataSplit=100, # data split =100. normally 70 for training, 30 for testing
   Yweights=NULL,
   Prevalence=0.5,
   VarImport=10,
-  #models.eval.meth = c('TSS','ROC'),
+  models.eval.meth = c('ROC'),
   SaveObj = TRUE,
   rescal.all.models = TRUE)
 
@@ -187,6 +191,24 @@ myBiomodProj <- BIOMOD_Projection(modeling.output = myBiomodModelOut,
                                   clamping.mask = T,
                                   do.stack=T)
 
+
+
+####### Plot up the map quickly....
+library (rasterVis)
+map <- myBiomodProj@proj@val[[1]]
+
+gplot(map) + geom_tile(aes(fill = value)) +
+  scale_fill_gradient(low = 'white', high = 'dark blue') +
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="red", alpha=0.6)+
+  coord_equal()+
+    scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+    scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  ggtitle ("Forficula auricularia Maxent SDM v1")
+
+
+### Ensemble modelling (if multiple algorithms)
+
 myEnsemble <- BIOMOD_EnsembleModeling (modeling.output =myBiomodModelOut, 
                                        chosen.models='all', 
                                        em.by = 'all',
@@ -202,17 +224,6 @@ myEnsemble <- BIOMOD_EnsembleModeling (modeling.output =myBiomodModelOut,
 ensembleBiomodProj <- BIOMOD_EnsembleForecasting(EM.output=myEnsemble,
                                                  projection.output=myBiomodProj)
 
-
-####### Plot up the map quickly....
-map <- ensembleBiomodProj@proj@val[[1]]
-
-gplot(map) + geom_tile(aes(fill = value)) +
-  scale_fill_gradient(low = 'white', high = 'dark red') +
-  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  coord_equal()+
-    scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
-    scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  ggtitle ("Forficula auricularia Maxent SDM v1")
   
 
 
