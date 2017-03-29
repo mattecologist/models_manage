@@ -3,17 +3,15 @@
 ## Still to do:
 ## 1. Variable selection pre-modelling
 ## 2. Variable response curves
-## 3. Add in Australian collection data
+## 3. Add in Australian collection data (ALA and APPD added - add our data or use to test...)
 ## 4. Niche overlap between Australian and global datasets (if of interest)
 
-
-#### GBIF data
-library (rgbif)
 library (rgeos)
 library (dismo)
 library (maptools)
 
-
+#### GBIF data
+library (rgbif)
 ##First, lookup the species on GBIF using the rgbif package
 head(name_lookup(query = 'Forficula auricularia', rank="species", return = 'data'))
 hold.dat <- occ_search(scientificName = "Forficula auricularia", limit = 20)
@@ -26,6 +24,25 @@ dat <- occ_search(taxonKey=key, return='data', limit=hold.dat$meta$count)
 gbifmap(dat)
 
 dist <- cbind (dat[,c("species",  "decimalLatitude", "decimalLongitude")])
+
+### ALA data
+library (ALA4R)
+y <- occurrences(taxon="forficula auricularia",fields=c("latitude","longitude"),download_reason_id=10)
+
+ala_dist <- data.frame(cbind("species" = "Forficula auricularia", y$data[, c("latitude", "longitude")]))
+ala_dist <- ala_dist[complete.cases(ala_dist),]
+colnames (ala_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
+
+#### add both together
+dist <- rbind (dist, ala_dist)
+
+### APPD data
+#### Note: this comes from a closed database and I had to gain permission to use this data - not for redistribution.
+
+appd <- read.csv("/home/hil32c/Dropbox/Timing of pest and beneficial GRDC/Earwigs/APPD data/Forficula auricularia_290317.csv", header=T)
+appd_dist <- appd[,c("Scientific.Name", "Latitude...original", "Longitude...original")]
+colnames (appd_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
+dist <- rbind (dist, appd_dist)
 
 ### loading raster data (example here is the worldclim data)
 ### about a 10 mb download at this resolution for the world.
@@ -119,7 +136,7 @@ myBiomodOption <- BIOMOD_ModelingOptions(
                  lq2lqptthreshold = 80,
                  l2lqthreshold = 10,
                  hingethreshold = 15,
-                 #beta_threshold = -1, #numeric (default -1.0), regularization parameter to be applied to all linear, quadratic and product features; negative value enables automatic setting
+                 beta_threshold = -1, #numeric (default -1.0), regularization parameter to be applied to all linear, quadratic and product features; negative value enables automatic setting
                  beta_categorical = -1,
                  beta_lqp = -1,
                  beta_hinge = 2,
