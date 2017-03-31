@@ -45,6 +45,14 @@ appd_dist <- appd[,c("Scientific.Name", "Latitude...original", "Longitude...orig
 colnames (appd_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 dist <- rbind (dist, appd_dist)
 
+## Other data
+#### NOT for redistribution at this point
+
+projdata <- read.csv("./data/european earwig_Sarina.csv", header=T)
+proj_dist <- data.frame(cbind("species" = "Forficula auricularia", projdata[, c("lat", "long")]))
+colnames (proj_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
+dist <- rbind (dist, proj_dist)
+
 ### loading raster data (example here is the worldclim data)
 ### about a 10 mb download at this resolution for the world.
 all_biovar <- getData("worldclim", var = "bio", res = 10) 
@@ -140,9 +148,9 @@ myBiomodOption <- BIOMOD_ModelingOptions(
                  lq2lqptthreshold = 80,
                  l2lqthreshold = 10,
                  hingethreshold = 15,
-                 beta_threshold = 5,#-1, #numeric (default -1.0), regularization parameter to be applied to all linear, quadratic and product features; negative value enables automatic setting
-                 beta_categorical = -1,
-                 beta_lqp = -1,
+                 beta_threshold = 5,#-1, #numeric (default -1.0), regularization parameter to be applied 
+                 beta_categorical = -1,  #to all linear, quadratic and product features; negative value 
+                 beta_lqp = -1,          #enables automatic setting
                  beta_hinge = 2,
                  defaultprevalence = 0.5))
 
@@ -206,6 +214,20 @@ gplot(map) + geom_tile(aes(fill = value)) +
     scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
   ggtitle ("Forficula auricularia Maxent SDM v1")
 
+all_vals <- extract (map, dist[,2:3])
+
+LTE10 <- quantile (all_vals, .1, na.rm=T)[[1]]
+
+map2 <- reclassify (map, c(-Inf, LTE10, 0, LTE10, Inf, 1))
+
+gplot(map2) + geom_tile(aes(fill = value)) +
+  scale_fill_gradient(low = 'white', high = 'dark blue') +
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="red", alpha=0.6)+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  ggtitle ("Forficula auricularia Maxent SDM v1")
 
 ### Ensemble modelling (if multiple algorithms)
 
