@@ -91,8 +91,148 @@ while (x <= length(degday$GDD)){
 
 library (devRate)
 
-#development rate (r)
+hatchling <- read.csv ("./data/images/hatchling.csv", header=FALSE)
+hatchling[2][hatchling[2] < .001] <- 0
+hatchling <- round(hatchling, 3)
+
+moult1 <- read.csv ("./data/images/moult1.csv", header=FALSE)
+moult1 [2][moult1 [2] < .001] <- 0
+moult1 <- round(moult1 , 3)
+
+moult2 <- read.csv ("./data/images/moult2.csv", header=FALSE)
+moult2 [2][moult2 [2] < .001] <- 0
+moult2 <- round(moult2 , 3)
+
+moult3 <- read.csv ("./data/images/moult3.csv", header=FALSE)
+moult3 [2][moult3 [2] < .001] <- 0
+moult3 <- round(moult3 , 3)
+
+moult4 <- read.csv ("./data/images/moult4.csv", header=FALSE)
+moult4 [2][moult4 [2] < .001] <- 0
+moult4 <- round(moult4 , 3)
+
+devRateInfo(eq = briere1_99)
+
+#Briere, J.F., Pracros, P., le Roux, A.Y. and Pierre, S. (1999) A novel rate
+#model of temperature-dependent development for arthropods. Environmental
+#Entomology, 28, 22-29.
+
+#rT ~ aa * T * (T - Tmin) * (Tmax - T)^(1/2)
+
+devRatePlotInfo (eq = briere1_99, sortBy = "ordersp",
+                 ylim = c(0, 0.20), xlim = c(0, 50))
+
+## with the Brier model 
+
+
+## having troubles estimating the start parameters - think a lot of problem comes from the Tmax threshold.      
+      
+      #rT ~ aa * T * (T - Tmin) * (Tmax - T)^(1/2)
+      hatchling$test <- 0.00014 * hatchling$V1 * (hatchling$V1 - 5.3) * (29 - hatchling$V1)^(1 / 2)
+      moult1$test <- 0.00018 * moult1$V1 * (moult1$V1 - 5.3) * (23.3 - moult1$V1)^(1 / 2)
+      
+
+m_hatchling <- devRateModel(eq = briere1_99, temp = hatchling[,1], devRate = hatchling[,2], startValues = list(aa = 0.00014, Tmin= 5.3, Tmax=19))
+m_moult1 <- devRateModel(eq = briere1_99, temp = moult1[,1], devRate = moult1[,2], startValues = list(aa = 0.00018, Tmin= 7.5, Tmax=23.3))
+m_moult2 <- devRateModel(eq = briere1_99, temp = moult2[,1], devRate = moult2[,2], startValues = list(aa = 0.00020, Tmin= 8.0, Tmax=23.4))
+m_moult3 <- devRateModel(eq = briere1_99, temp = moult3[,1], devRate = moult3[,2], startValues = list(aa = 0.00019, Tmin= 8.7, Tmax=23.5))
+m_moult4 <- devRateModel(eq = briere1_99, temp = moult4[,1], devRate = moult4[,2], startValues = list(aa = 0.00011, Tmin= 8.4, Tmax=23.4))
+
+
+## testing with the Taylor model.....
+m_hatchling <- devRateModel(eq = taylor_81, temp = hatchling[,1], devRate = hatchling[,2], startValues = list(Rm = 0.05, To= 5.3,Tm=19))
+m_moult1 <- devRateModel(eq = taylor_81, temp = moult1[,1], devRate = moult1[,2], startValues = list(Rm = 0.1, To= 7.5, Tm=23.3))
+m_moult2 <- devRateModel(eq = taylor_81, temp = moult2[,1], devRate = moult2[,2], startValues = list(Rm = 0.1, To= 8.0, Tm=23.4))
+m_moult3 <- devRateModel(eq = taylor_81, temp = moult3[,1], devRate = moult3[,2], startValues = list(Rm = 0.5, To= 8.7, Tm=23.5))
+m_moult4 <- devRateModel(eq = taylor_81, temp = moult4[,1], devRate = moult4[,2], startValues = list(Rm = 0.1, To= 8.4, Tm=23.4))
+
+
+
+devRatePlot(eq = taylor_81, nlsDR = m_hatchling, temp = hatchling[,1], devRate = hatchling[,2],
+            pch = 16, ylim = c(0, 0.2))
+
+
+forecastForficula <- devRateIBM(
+  tempTS = rnorm(n = 100, mean = 15, sd = 1),
+  timeStepTS = 1,
+  models = list(m_hatchling, m_moult1, m_moult2),
+  numInd = 500,
+  stocha = 0.015,
+  timeLayEggs = 1)
+
+
+##########################################################################################################3
+###
+##########################################################################################################
+
+# Max temps
+tmax <- read.csv ("./data/weather/080023_tmax.csv")
+tmax <- tmax[,3:6]
+colnames (tmax) <- c("Year", "Month", "Day", "Tmax")
+
+## any missing vales, take average over 2 weeks
+fix <- which(is.na(tmax$Tmax))
+for (i in fix){
+  tmax[i,4] <- mean(tmax[(i-7):(i+7),4], na.rm=T)
+}
+
+# Min temps
+tmin <- read.csv ("./data/weather/080023_tmin.csv")
+tmin <- tmin[,3:6]
+colnames (tmin) <- c("Year", "Month", "Day", "Tmin")
+
+## any missing vales, take average over 2 weeks
+fix <- which(is.na(tmin$Tmin))
+for (i in fix){
+  tmin[i,4] <- mean(tmin[(i-7):(i+7),4], na.rm=T)
+  }
+  
+temp_data <- merge (tmax, tmin)
+
+
+forecastForficula <- devRateIBM(
+  tempTS = temp_data$Tmax,
+  timeStepTS = 1,
+  models = list(m_hatchling, m_moult1, m_moult2, m_moult3, m_moult4),
+  numInd = 500,
+  stocha = 0.015,
+  timeLayEggs = 1)
+
+
+
+devRateIBMPlot(ibm = forecastForficula, typeG = "density")
 
 
 
 
+
+
+
+
+#daily code = 136
+#monthy code = 139
+
+bomdata<- function(station,code){
+  for(i in 1: length(station)){
+    p.url<-paste("http://www.bom.gov.au/jsp/ncc/cdio/weatherData/av?p_stn_num=",station[i],"&p_display_type=availableYears&p_nccObsCode=",code,sep ="")
+    download.file(p.url,"test.txt")
+    filelist <- list.files(pattern = ".txt")
+    foo<- file(filelist,"r")
+    text<- suppressWarnings(readLines(foo))
+    close(foo)
+    l<- regexpr(":",text[1])
+    m<- unlist(gregexpr(",", text[1], perl = TRUE))
+    pc<- substr(text[1],l[[1]]+1,l[[1]]+(m[2]-(l[[1]]+1)))
+    url<-paste("http://www.bom.gov.au/jsp/ncc/cdio/weatherData/av?p_display_type=dailyZippedDataFile&p_stn_num=",station[i],"&p_c=",pc,"&p_nccObsCode=",code,"&p_startYear=2013", sep ="")
+    suppressWarnings(download.file(url,paste(station[i],".zip",sep= ""), mode = "wb"))
+    unlink("test.txt")
+  }
+}
+
+bomdata(080023,136)
+
+zipF <- "./73137.zip"
+outDir<-"./"
+unzip(zipF,exdir=outDir)
+
+weather_data <- read.csv("IDCJAC0009_73137_1800_Data.csv", header=T)
