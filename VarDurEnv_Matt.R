@@ -1,13 +1,15 @@
 #Example where the juvenile stage duration is dependent upon temperature.
 #stagePop: stage-structured population modelling
 
+##also see "Working with dynamic crop models : methods, tools and examples for agriculture and environment" and package "ZeBook"
+
 # We consider a theoretical species with two stages (juvenile and adult) where
 # growth experiments conducted over a range of different but constant temperatures, Tc,
 # have shown that the length of the juvenile stage, τ (tau), is affected by temperature according to:
 
 #tau (Tc) = tmin + (Tc-Topt / w)^2
 
-T optimum = 20 degrees, and w = 2 (is it minimum degrees?)
+# T optimum = 20 degrees, and w = 2 (is it minimum degrees?)
 
 library(stagePop)
 
@@ -15,7 +17,11 @@ library(stagePop)
 solver.options=list(DDEsolver='PBS',tol=1e-8,hbsize=1e4,dt=0.01)
 
 maxDur=200
+
+# minimum duration of days spent at larval stage (equal to Topt?)
 minDur=60
+
+##Creates a temperature function where the yearly average is 15 degrees and the
 tempFunc=function(time){
   T=15*(1-cos(2*pi*(time+80)/365))
   return(T)}
