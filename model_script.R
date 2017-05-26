@@ -205,6 +205,12 @@ myBiomodProj <- BIOMOD_Projection(modeling.output = myBiomodModelOut,
 library (rasterVis)
 map <- myBiomodProj@proj@val[[1]]
 
+sites <- data.frame("site"=NA, lat="NA", long="NA")
+sites[1:3] <- c("Thoona", -36.3305, 146.0853)
+sites[2, 1:3] <- c("Elmore", -36.4968, 144.6088)
+sites$lat <- as.numeric(sites$lat)
+sites$long <- as.numeric(sites$long)
+
 gplot(map) + geom_tile(aes(fill = value)) +
   scale_fill_gradient(low = 'white', high = 'dark blue') +
   geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
@@ -212,6 +218,8 @@ gplot(map) + geom_tile(aes(fill = value)) +
   coord_equal()+
     scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
     scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  geom_point (data=sites, aes (long, lat), colour="green")+
+  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
   ggtitle ("Forficula auricularia Maxent SDM v1")
 
 all_vals <- extract (map, dist[,2:3])

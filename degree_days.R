@@ -163,14 +163,15 @@ m_moult2 <- devRateModel(eq = lactin1_95, temp = moult2[,1], devRate = moult2[,2
 m_moult3 <- devRateModel(eq = lactin1_95, temp = moult3[,1], devRate = moult3[,2], startValues = list(aa = 0.15,Tmax=23, deltaT=5.5))
 m_moult4 <- devRateModel(eq = lactin1_95, temp = moult4[,1], devRate = moult4[,2], startValues = list(aa = 0.15,Tmax=23, deltaT=5.5))
 
+par(mfrow=c(3, 2))
 
 devRatePlot(eq= lactin1_95, nlsDR=m_hatchling, temp = hatchling[,1], devRate = hatchling[,2], pch = 16, ylim = c(0, 0.2), main="Hatchling")
-devRatePlot(eq= lactin1_95, nlsDR=m_moult1, temp = moult1[,1], devRate = moult1[,2], pch = 16, ylim = c(0, 0.2))
-devRatePlot(eq= lactin1_95, nlsDR=m_moult2, temp = moult2[,1], devRate = moult2[,2], pch = 16, ylim = c(0, 0.2))
-devRatePlot(eq= lactin1_95, nlsDR=m_moult3, temp = moult3[,1], devRate = moult3[,2], pch = 16, ylim = c(0, 0.2))
-devRatePlot(eq= lactin1_95, nlsDR=m_moult4, temp = moult4[,1], devRate = moult4[,2], pch = 16, ylim = c(0, 0.2))
+devRatePlot(eq= lactin1_95, nlsDR=m_moult1, temp = moult1[,1], devRate = moult1[,2], pch = 16, ylim = c(0, 0.2), main="Moult 1")
+devRatePlot(eq= lactin1_95, nlsDR=m_moult2, temp = moult2[,1], devRate = moult2[,2], pch = 16, ylim = c(0, 0.2), main="Moult 2")
+devRatePlot(eq= lactin1_95, nlsDR=m_moult3, temp = moult3[,1], devRate = moult3[,2], pch = 16, ylim = c(0, 0.2), main="Moult 3")
+devRatePlot(eq= lactin1_95, nlsDR=m_moult4, temp = moult4[,1], devRate = moult4[,2], pch = 16, ylim = c(0, 0.2), main="Moult 4")
 
-
+par (mfrow=c(1,1))
 
 
 devRatePlot(eq = taylor_81, nlsDR = m_moult4, temp = hatchling[,1], devRate = hatchling[,2],
@@ -190,8 +191,11 @@ forecastForficula <- devRateIBM(
 ###
 ##########################################################################################################
 
+## Earwig site 
+#"Thoona" = Benalla (station ID 082170)
+
 # Max temps
-tmax <- read.csv ("./data/weather/080023_tmax.csv")
+tmax <- read.csv ("./data/weather/082170_tmax.csv")
 tmax <- tmax[,3:6]
 colnames (tmax) <- c("Year", "Month", "Day", "Tmax")
 
@@ -202,7 +206,7 @@ for (i in fix){
 }
 
 # Min temps
-tmin <- read.csv ("./data/weather/080023_tmin.csv")
+tmin <- read.csv ("./data/weather/082170_tmin.csv")
 tmin <- tmin[,3:6]
 colnames (tmin) <- c("Year", "Month", "Day", "Tmin")
 
@@ -214,6 +218,12 @@ for (i in fix){
   
 temp_data <- merge (tmax, tmin)
 
+temp_data <- temp_data [order(temp_data$Month, temp_data$Day),]
+
+temp_data$position <- seq (from=1, to=length(temp_data$Tmax), by=1)
+
+## added this as I'm not sure how to use both tmin and tmax in a single vector - use this approach and then have time step as 2 or 0.5?
+test <- as.vector (rbind (temp_data$Tmax, temp_data$Tmin))
 
 forecastForficula <- devRateIBM(
   tempTS = temp_data$Tmax,
@@ -221,12 +231,29 @@ forecastForficula <- devRateIBM(
   models = list(m_hatchling, m_moult1, m_moult2, m_moult3, m_moult4),
   numInd = 500,
   stocha = 0.04,
-  timeLayEggs = 20)
+  timeLayEggs = 60)
+
+
+par(mar = c(5,5,2,5))
+devRateIBMPlot(ibm = forecastForficula, typeG = "density", threshold = .1)
+
+par(new=T)
+with (temp_data, plot (position, Tmax, pch=16, axes=F, xlab=NA, ylab=NA, cex=0.6, col="light grey"))
+axis(side = 4)
+mtext(side = 4, line = 3, 'Daily Max Temperature')
+abline (23, 0)
 
 
 
-devRateIBMPlot(ibm = forecastForficula, typeG = "density")
+par(mar = c(5,5,2,5))
 
+devRateIBMPlot(ibm = forecastForficula, typeG = "hist")
+
+par(new=T)
+with (temp_data, plot (position, Tmax, pch=16, axes=F, xlab=NA, ylab=NA, cex=0.6, col="light blue"))
+axis(side = 4)
+mtext(side = 4, line = 3, 'Daily Max Temperature')
+abline (23, 0)
 
 
 
@@ -261,3 +288,4 @@ outDir<-"./"
 unzip(zipF,exdir=outDir)
 
 weather_data <- read.csv("IDCJAC0009_73137_1800_Data.csv", header=T)
+
