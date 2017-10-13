@@ -1,5 +1,10 @@
 ##Mapping
 
+## 1. Map current distributions of the invasive fish species in the MDB
+## 2. Predictor selection methods
+## 3. Environmental overlap / niche similairty between species
+## 4. JSDM methods to model co-occurence interactions 
+
 ## typical packages I load for GIS in R
 library (raster)
 library (maptools)
