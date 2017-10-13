@@ -2,8 +2,11 @@
 
 ## 1. Map current distributions of the invasive fish species in the MDB
 ## 2. Predictor selection methods
-## 3. Environmental overlap / niche similairty between species
+## 3. Environmental overlap / niche similarity between species
 ## 4. JSDM methods to model co-occurence interactions 
+## Pollock et al. 2014 Methods Ecology and Evolution 5,397–406
+## Leach et al. 2017  Journal of Mammalogy 98, 1434–1442
+
 
 ## typical packages I load for GIS in R
 library (raster)
@@ -15,19 +18,29 @@ library (ggplot2)
 
 library (ALA4R)
 
-### Fish species
+## ArcGIS base file
+worldshp <- readShapePoly ("./worldadmin/WorldAdmin.shp") 
 
+
+## Clip just to Australia
+Aust <- worldshp[worldshp@data$CNTRY_NAME=="Australia",]
+
+### Fish species
+### Preliminary list from Linterman's "Fishes of the Murray-Darling Basin"
 spp <- "cyprinus carpio" # European carp
 spp <- "salmo trutta" # Brown trout
 spp <- "salmo salar" # Atlantic salmon
-spp <- "salvelinus fontinalis"
-spp <- "oncorhynchus mykiss"
-spp <- "carassius auratus"
-spp <- "misgurnus anguillicaudatus"
-spp <- "perca fluviatilis"
-spp <- "tinca tinca"
-spp <- "rutilus rutilus"
-spp <- "gambusia holbrooki"
+spp <- "salvelinus fontinalis" # Brook char
+spp <- "oncorhynchus mykiss" # Rainbow trout
+spp <- "carassius auratus" # Goldfish
+spp <- "misgurnus anguillicaudatus" # Oriental weatherloach
+spp <- "perca fluviatilis" # Redfin perch 
+spp <- "tinca tinca" # Tench
+spp <- "rutilus rutilus" # Roach
+spp <- "gambusia holbrooki" #Mosquitofish / Gambusia
+
+#Other fish
+spp <- "amniataba percoides" #Banded grunter - only in southern QLD would it come into contact with carp
 
 ### ALA data
 
