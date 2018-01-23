@@ -220,6 +220,9 @@ temp_data <- merge (tmax, tmin)
 
 temp_data <- temp_data [order(temp_data$Month, temp_data$Day),]
 
+## start the simulation from June 
+temp_data <- temp_data[245:nrow(temp_data),]
+
 temp_data$position <- seq (from=1, to=length(temp_data$Tmax), by=1)
 
 ## added this as I'm not sure how to use both tmin and tmax in a single vector - use this approach and then have time step as 2 or 0.5?
@@ -281,11 +284,11 @@ bomdata<- function(station,code){
   }
 }
 
-bomdata(080023,136)
+bomdata(82170,136)
 
-zipF <- "./73137.zip"
+zipF <- "./80023.zip"
 outDir<-"./"
 unzip(zipF,exdir=outDir)
 
-weather_data <- read.csv("IDCJAC0009_73137_1800_Data.csv", header=T)
+weather_data <- read.csv("IDCJAC0009_80023_1800_Data.csv", header=T)
 

@@ -9,9 +9,18 @@
 library (rgeos)
 library (dismo)
 library (maptools)
-
+library (ggplot2)
 #### GBIF data
 library (rgbif)
+
+#######################################################################
+update_dist=FALSE
+
+if (update_dist == FALSE){
+  dist <- read.csv("complete_dist.csv", header=T)
+} else{
+
+
 ##First, lookup the species on GBIF using the rgbif package
 head(name_lookup(query = 'Forficula auricularia', rank="species", return = 'data'))
 hold.dat <- occ_search(scientificName = "Forficula auricularia", limit = 20)
@@ -27,7 +36,7 @@ dist <- cbind (dat[,c("species",  "decimalLatitude", "decimalLongitude")])
 
 ### ALA data
 library (ALA4R)
-y <- occurrences(taxon="forficula auricularia",fields=c("latitude","longitude"),download_reason_id=10)
+y <- occurrences(taxon="forficula auricularia",fields=c("latitude","longitude", "basis_of_record"),download_reason_id=10)
 
 ala_dist <- data.frame(cbind("species" = "Forficula auricularia", y$data[, c("latitude", "longitude")]))
 ala_dist <- ala_dist[complete.cases(ala_dist),]
@@ -45,6 +54,8 @@ appd_dist <- appd[,c("Scientific.Name", "Latitude...original", "Longitude...orig
 colnames (appd_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 dist <- rbind (dist, appd_dist)
 
+#appd2 <- appd[,c("Scientific.Name", "Latitude...original", "Longitude...original", "Data.Resource.Name")] 
+
 ## Other data
 #### NOT for redistribution at this point
 
@@ -53,12 +64,38 @@ proj_dist <- data.frame(cbind("species" = "Forficula auricularia", projdata[, c(
 colnames (proj_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 dist <- rbind (dist, proj_dist)
 
+## From the 2017 Quarrell et al paper
+quarrell_data <- read.csv ("./data/european_earwig_Quarrell.csv", header=T)
+quarrell_dist <- data.frame(cbind("species" = "Forficula auricularia", quarrell_data[, c("Latitude", "Longitude")]))
+colnames (quarrell_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
+dist <- rbind (dist, quarrell_dist)
+
+write.csv (dist, file="complete_dist.csv", row.names = FALSE)
+}
+
+
+### Begin analysis
+
 ### loading raster data (example here is the worldclim data)
 ### about a 10 mb download at this resolution for the world.
-all_biovar <- getData("worldclim", var = "bio", res = 10) 
+#all_biovar <- getData("worldclim", var = "bio", res = 10) 
+
+bioclimall <- stack("./worldclim/bioclimall_clipped.grd")
 
 ## subset to most important variables. will expand on this section eventually with methodology.
-biovar <- subset(all_biovar, c("bio2","bio3","bio5","bio6","bio7","bio13","bio14","bio15"))
+biovar <- subset(bioclimall, c(#"bio02",
+                               "bio03",
+                               "bio05",
+                               "bio06",
+                               "bio07",
+                               "bio13",
+                               "bio14",
+                               "bio15"))
+
+hii <- raster ("hii_10min.tif")
+hii <- resample (hii, biovar[[1]])
+
+biovar <- stack(biovar, hii)
 
 ##  create a reference raster from this, rescale the points to 1 per grid cell 
 ##  and create a new data.frame with this new distribution dataset.
@@ -83,127 +120,175 @@ clim.df <- as.data.frame(extract (biovar, sppP[,1:2]))
 sppDF <- cbind (sppP, clim.df)
 sppDF$layer <- NULL
 
-######## Create the background data (using Koppen-Geiger data from online)
-temp <- tempfile()
-download.file("http://koeppen-geiger.vu-wien.ac.at/data/Koeppen-Geiger-ASCII.zip",temp)
-dF <- read.table(unz(temp, "Koeppen-Geiger-ASCII.txt"), header=TRUE,as.is=TRUE)
-unlink(temp)
-
-#convert to sp SpatialPointsDataFrame
-coordinates(dF) = c("Lon", "Lat")
-# promote to SpatialPixelsDataFrame
-gridded(dF) <- TRUE
-# promote to SpatialGridDataFrame
-sGDF = as(dF, "SpatialGridDataFrame")
-
-#convert to spatial polygon
-koppen_poly <-  as(sGDF, "SpatialPolygonsDataFrame") 
-
-#determine unique koppen zones
-globdis <- sppP
-coordinates(globdis) <- ~x+y
-
-koppen <- na.exclude (over (globdis, koppen_poly))
-kopp_unique <- unique(koppen$Cls)
-globdis_poly <- koppen_poly[koppen_poly$Cls %in% kopp_unique, ]
-
-#break down Koppen polygons
-Kpoly <- gUnaryUnion(globdis_poly)
-projection(Kpoly) <- CRS('+proj=longlat')
-
-#sample 10000 random cells across backgrounds 
-background <- data.frame (spsample (Kpoly, 10000, type="random"))
-background$pa <- 0
-background.df <- as.data.frame(extract (biovar, background[,1:2]))
-bgDF <- cbind (background, background.df)
-
-## Make modelling data.frame
-forficula <- rbind (sppDF, bgDF)
-forficula <- forficula[complete.cases(forficula),]
-forficula <- na.omit (forficula)
-
-##### Seeting up prediction data.
+##### Seeting up prediction data############
+## Need the extent of Australia for defining the ranges
 # Predict the model to the climate values for Australia (data.frame)
 e <- extent (112, 155, -45, -10)
 Australia <- crop (biovar, e)
 #convert to a stack
 Australia <- stack(unstack(Australia))
+#############################################
+
+
+######## Perform a PCA on the presence data
+locs.dat <- (sppP[,1:2])
+coordinates (locs.dat) <- ~x+y
+wrld_simpl@proj4string <- CRS("+proj=longlat +datum=WGS84")
+locs.dat@proj4string <- CRS("+proj=longlat +datum=WGS84")
+
+code <- extract (Australia[[1]], sppP[,1:2])
+code[is.na(code)] <- 0
+code[code!=0] <- 1
+
+pca_dat <- extract (biovar, sppP[,1:2])
+pca_dat <- cbind(pca_dat, code)
+pca_dat <- pca_dat[complete.cases(pca_dat),]
+pca_out <- princomp(pca_dat[,1:8])
+
+pca.dat <- as.data.frame(pca_out$scores)
+
+pca_dat <- as.data.frame(pca_dat)
+
+
+#relevel(pca_dat[,9]) 2 = Africa, 9 = Australia, 19 = Americas, 142 = Asia, 150 = Europe, 
+
+ggplot (pca.dat, aes(Comp.1, Comp.2))+
+  geom_point(aes(colour=as.factor(pca_dat$code)))+
+  theme_minimal()
+
+
+ggplot (pca.dat, aes(Comp.1, Comp.3))+
+  geom_point(aes(colour=as.factor(pca_dat$code)))+
+  theme_minimal()
+
+ggplot (pca.dat, aes(Comp.2, Comp.3))+
+  geom_point(aes(colour=as.factor(pca_dat$code)))+
+  theme_minimal()
+
 
 ###################################################################################################
-## Using BIOMOD for now - might update to the Maxnet package at some point...
+## Niche analysis
 
-library (biomod2)
+## Coding
+sppP$code <- code
+
+## check if the background files exist, if not, will go ahead and make them using the "background_builder" function
+
+if (file.exists("earwigs_Australia.grd")){
+  inv_ras <- raster("earwigs_Australia.grd")
+} else{
+  terres <- readShapePoly("./Shapes/terrestrial/wwf_terr_ecos_2.shp")
+  invasive <- data.frame (sppP[sppP$code==1,])
+  colnames(invasive)[2] <- "Latitude"
+  colnames(invasive)[1] <- "Longitude"
+  inv_ras <- background_builder(invasive, terres, wrld_simpl, ref_rast = biovar[[1]])
+  inv_ras <- crop (inv_ras, e)
+  writeRaster(inv_ras, filename = "earwigs_Australia.grd", overwrite=TRUE)
+}
+
+if (file.exists("earwigs_global.grd")){
+  nat_ras <- raster("earwigs_global.grd")
+} else{
+  terres <- readShapePoly("./Shapes/terrestrial/wwf_terr_ecos_2.shp")
+  native <- data.frame (sppP[sppP$code==0,])
+  colnames(native)[2] <- "Latitude"
+  colnames(native)[1] <- "Longitude"
+  nat_ras <- background_builder(native, terres, wrld_simpl, ref_rast = biovar[[1]])
+  temp <- resample (Australia[[1]], nat_ras)
+  nat_ras <- mask (nat_ras, temp, inverse=TRUE)
+  writeRaster(nat_ras, filename = "earwigs_global.grd", overwrite=TRUE)
+}
+
+if (file.exists("earwigs_global_alldata.grd")){
+  alldata <- raster ("earwigs_global_alldata.grd")
+} else{
+  temp <- resample (inv_ras, nat_ras)
+  alldata <-sum(stack(list(nat_ras, temp)), na.rm=T)
+  alldata <- reclassify(alldata, c(-Inf, 0, NA))
+  writeRaster(alldata, filename="earwigs_global_alldata.grd", overwrite=TRUE)
+}
+
+
+background <- as.data.frame(randomPoints(alldata, 40000))
+
+background$pa <- 0
+background.df <- as.data.frame(extract (biovar, background[,1:2]))
+bgDF <- cbind (background, background.df)
+
+
+## Make modelling data.frame
+#forficula <- rbind (sppDF, bgDF)
+#forficula <- forficula[complete.cases(forficula),]
+#forficula <- na.omit (forficula)
+
+locs <- sppDF[,1:2]
+
+#varsstack <- crop(biovar, nat_ras)
+#varsstack <- mask(varsstack, nat_ras)
+
 ###################################################################################################
-##GLOBAL MODELLING OPTIONS
-###################################################################################################
-myBiomodOption <- BIOMOD_ModelingOptions(
-  MAXENT.Phillips = list( path_to_maxent.jar = "./maxent/maxent.jar",
-                 maximumiterations = 200,
-                 visible = FALSE,
-                 linear = FALSE,
-                 quadratic = FALSE,
-                 product = FALSE,
-                 threshold = FALSE,
-                 hinge = TRUE,
-                 lq2lqptthreshold = 80,
-                 l2lqthreshold = 10,
-                 hingethreshold = 15,
-                 beta_threshold = 5,#-1, #numeric (default -1.0), regularization parameter to be applied 
-                 beta_categorical = -1,  #to all linear, quadratic and product features; negative value 
-                 beta_lqp = -1,          #enables automatic setting
-                 beta_hinge = 2,
-                 defaultprevalence = 0.5))
+library (dismo)
+
+jar <- paste("/home/hil32c/R/x86_64-pc-linux-gnu-library/3.4/dismo/java/maxent.jar")
+
+file.exists(jar) ## must be true!
+
+wd <- getwd()
+
+## This vway of implementing maxent from the Renner et al. paper seems too restrictive.
+# max1 <- maxent(x=varsstack, p=locs, path=paste(wd,'/max1',sep=""),
+#               args=c("-P", "noautofeature", "nothreshold", "noproduct", 
+#               "maximumbackground=400000","noaddsamplestobackground","noremoveduplicates"))
+# 
+# max1.pred <- predict(max1, Australia, args="outputformat=raw",
+#               filename=paste(wd, '/max1/pred.asc', sep=""), format="ascii",
+#               progress="text", overwrite=TRUE)
+# 
+# max2.pred <- predict(max1, biovar, args="outputformat=raw",
+#                      filename=paste(wd, '/max1/pred2.asc', sep=""), format="ascii",
+#                      progress="text")
+
+# #Start with a default map
+# max2 <- maxent(x=varsstack, p=locs, path=paste(wd,'/max2',sep=""),
+#                args=c("beta_threshold=-1", 
+#                       "-P",  # response curves
+#                       "noautofeature", 
+#                       "nothreshold", 
+#                       "noproduct",
+#                       "maximumbackground=40000",
+#                       "noaddsamplestobackground",  
+#                       "noremoveduplicates"))
+# 
+# max2.pred <- predict(max2, Australia, args="outputformat=raw",
+#                      filename=paste(wd, '/max2/pred.asc', sep=""), format="ascii",
+#                      progress="text", overwrite=TRUE)
 
 
-###################################################################################################
-## GLOBAL DISTRIBUTION MODELLING
-###################################################################################################
-myRespName <-"Forficula auricularia"
 
-myResp <- forficula$pa
-myExpl <- forficula[,4:ncol(forficula)]
-myBiomodData <- BIOMOD_FormatingData(resp.var = myResp,
-                                     expl.var = myExpl,
-                                     resp.xy = forficula[,c("x", "y")],
-                                     resp.name = myRespName)
+pres.env <- sppDF[,4:11]
 
+bg.env <- background.df
+pbg.env <- rbind(pres.env, bg.env)
+pbg.which <- c(rep(1, nrow(sppDF)), rep(0, nrow(bg.env)))
 
-myBiomodModelOut <- BIOMOD_Modeling(
-  myBiomodData,
-  models = c('MAXENT.Phillips'), #just Maxent at this stage
-  models.options = myBiomodOption,
-  NbRunEval=1, # how many runs to do = normally 10, but here is 1
-  DataSplit=100, # data split =100. normally 70 for training, 30 for testing
-  Yweights=NULL,
-  Prevalence=0.5,
-  VarImport=10,
-  models.eval.meth = c('ROC'),
-  SaveObj = TRUE,
-  rescal.all.models = TRUE)
+max1SWD <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/max1SWD',sep=""),
+                  args=c("beta_threshold=-1", 
+                        "-P",  # response curves
+                        "noautofeature", 
+                        "nothreshold", 
+                        "noproduct",
+                        "maximumbackground=40000",
+                      # "noaddsamplestobackground",  ## this is not working!
+                         "noremoveduplicates"))
 
-
-# examine evaluation metrics
-eval<- get_evaluations(myBiomodModelOut)
-
-
-#projections
-
-myBiomodProj <- BIOMOD_Projection(modeling.output = myBiomodModelOut,
-                                  new.env = Australia,
-                                  proj.name = 'curr_nat',
-                                  #xy.new.env = cruclim,
-                                  selected.models = 'all',
-                                  #binary.meth = c('TSS', 'ROC'),
-                                  filtered.meth = NULL,
-                                  compress = 'gzip',
-                                  clamping.mask = T,
-                                  do.stack=T)
-
-
+max1.pred <- predict(max1SWD, Australia, args="outputformat=raw",
+                    filename=paste(wd, '/max1/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                     progress="text")
 
 ####### Plot up the map quickly....
 library (rasterVis)
-map <- myBiomodProj@proj@val[[1]]
+library (viridis)
+#map <- myBiomodProj@proj@val[[1]]
 
 sites <- data.frame("site"=NA, lat="NA", long="NA")
 sites[1:3] <- c("Thoona", -36.3305, 146.0853)
@@ -211,53 +296,98 @@ sites[2, 1:3] <- c("Elmore", -36.4968, 144.6088)
 sites$lat <- as.numeric(sites$lat)
 sites$long <- as.numeric(sites$long)
 
-gplot(map) + geom_tile(aes(fill = value)) +
-  scale_fill_gradient(low = 'white', high = 'dark blue') +
+gplot(max1.pred) + geom_tile(aes(fill = value)) +
+  #scale_fill_gradient(low = 'white', high = 'dark blue') +
+  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
   geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="red", alpha=0.6)+
+  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="black", alpha=0.6, size=2)+
   coord_equal()+
     scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
     scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  geom_point (data=sites, aes (long, lat), colour="green")+
+  geom_point (data=sites, aes (long, lat), colour="green", size=2)+
+  geom_point (data=quarrell_dist , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
   #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle ("Forficula auricularia Maxent SDM v1")
+  ggtitle ("Forficula auricularia Maxent SDM")
 
-all_vals <- extract (map, dist[,2:3])
+################################################################################################################################
+## Niche shift analysis
 
-LTE10 <- quantile (all_vals, .1, na.rm=T)[[1]]
+library (ecospat)
 
-map2 <- reclassify (map, c(-Inf, LTE10, 0, LTE10, Inf, 1))
+occ.sp1 <- sppDF[sppP$code==0,]
+occ.sp2 <- sppDF[sppP$code==1,]
 
-gplot(map2) + geom_tile(aes(fill = value)) +
-  scale_fill_gradient(low = 'white', high = 'dark blue') +
-  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="red", alpha=0.6)+
-  coord_equal()+
-  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
-  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  ggtitle ("Forficula auricularia Maxent SDM v1")
+occ.sp1 <- occ.sp1[complete.cases(occ.sp1),]
+occ.sp2 <- occ.sp2[complete.cases(occ.sp2),]
 
-### Ensemble modelling (if multiple algorithms)
+x1 <- randomPoints(nat_ras, 10000)
+clim1 <- as.data.frame(cbind(x1,(extract(biovar, x1))))
+clim1 <- clim1[complete.cases(clim1),]
 
-myEnsemble <- BIOMOD_EnsembleModeling (modeling.output =myBiomodModelOut, 
-                                       chosen.models='all', 
-                                       em.by = 'all',
-                                       eval.metric=c('TSS','ROC'),
-                                       eval.metric.quality.threshold=c(0.5, 0.7), ##this TSS score is low, but sometimes shit is broke
-                                       models.eval.meth = c('TSS', 'ROC'), 
-                                       prob.mean = FALSE,
-                                       prob.ci.alpha = 0.05,
-                                       committee.averaging = FALSE,
-                                       prob.mean.weight = TRUE,
-                                       prob.mean.weight.decay = 'proportional')
+x2 <- randomPoints(inv_ras, 10000)
+clim2 <- as.data.frame(cbind(x2,(extract(biovar, x2))))
+clim2 <- clim2[complete.cases(clim2),]
 
-ensembleBiomodProj <- BIOMOD_EnsembleForecasting(EM.output=myEnsemble,
-                                                 projection.output=myBiomodProj)
+clim1$pa <- 0
+clim2$pa <- 0
 
-  
+clim1 <- clim1[,c(1,2,11,3,4,5,6,7,8, 9, 10)]
+clim2 <- clim2[,c(1,2,11,3,4,5,6,7,8, 9, 10)]
+
+inv <- rbind (occ.sp2, clim2)
+nat <- rbind (occ.sp1, clim1)
 
 
+pca.env <- dudi.pca(rbind(nat,inv)[,4:11],scannf=F,nf=2)
 
+ecospat.plot.contrib(contrib=pca.env$co, eigen=pca.env$eig)
+
+scores.globclim <- pca.env$li
+
+scores.sp.nat <- suprow(pca.env,nat[which(nat[,3]==1),4:11])$li
+scores.sp.inv <- suprow(pca.env,inv[which(inv[,3]==1),4:11])$li
+
+scores.clim.nat <-suprow(pca.env,nat[,4:11])$li
+scores.clim.inv <-suprow(pca.env,inv[,4:11])$li
+
+grid.clim.nat <- ecospat.grid.clim.dyn (glob=scores.globclim,
+  glob1=scores.clim.nat,
+  sp=scores.sp.nat, R=100,
+  th.sp=0)
+
+grid.clim.inv <- ecospat.grid.clim.dyn(glob=scores.globclim,
+  glob1=scores.clim.inv,
+  sp=scores.sp.inv, R=100,
+  th.sp=0)
+
+D.overlap <- ecospat.niche.overlap(grid.clim.nat, grid.clim.inv, cor=T)$D
+D.overlap
+
+#eq.test <- ecospat.niche.equivalency.test(grid.clim.nat, grid.clim.inv,rep=1000, alternative = "greater")
+#sim.test <- ecospat.niche.similarity.test (grid.clim.nat, grid.clim.inv, rep=1000, alternative = "greater",rand.type=2)
+#ecospat.plot.overlap.test(eq.test, "D", "Equivalency")
+#ecospat.plot.overlap.test(sim.test, "D", "Similarity")
+
+
+niche.dyn <- ecospat.niche.dyn.index(grid.clim.nat, grid.clim.inv, intersection = 0.1)
+
+ecospat.plot.niche.dyn (grid.clim.nat, grid.clim.inv, quant=0.25, interest=2, title= "Niche Overlap", name.axis1="PC1", name.axis2="PC2")
+ecospat.shift.centroids(scores.sp.nat, scores.sp.inv, scores.clim.nat, scores.clim.inv)
+
+ecospat.niche.dyn.index(grid.clim.nat, grid.clim.inv)
+
+for (i in names(nat[,4:11])){
+# gridding the native niche
+grid.clim.t.nat <-ecospat.grid.clim.dyn(glob=as.data.frame(rbind(nat,inv)[,i]),
+                                        glob1=as.data.frame(nat[,i]),sp=as.data.frame(nat[which(nat[,3]==1),i]), R=1000, th.sp=0)
+# gridding the invaded niche
+grid.clim.t.inv <-ecospat.grid.clim.dyn(glob=as.data.frame(rbind(nat,inv)[,i]),
+                                        glob1=as.data.frame(inv[,i]),sp=as.data.frame(inv[which(inv[,3]==1),i]), R=1000, th.sp=0)
+
+t.dyn<-ecospat.niche.dyn.index(grid.clim.t.nat, grid.clim.t.inv,intersection=0.1)
+ecospat.plot.niche.dyn(grid.clim.t.nat, grid.clim.t.inv, quant=0, interest=2, title= "Niche Overlap",
+                       name.axis1=paste(names(nat[i])))
+}
 
 
 
