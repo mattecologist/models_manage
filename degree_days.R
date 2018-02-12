@@ -210,43 +210,31 @@ tmin <- read.csv ("./data/weather/082170_tmin.csv")
 tmin <- tmin[,3:6]
 colnames (tmin) <- c("Year", "Month", "Day", "Tmin")
 
-## any missing vales, take average over 2 weeks
-fix <- which(is.na(tmin$Tmin))
-for (i in fix){
-  tmin[i,4] <- mean(tmin[(i-7):(i+7),4], na.rm=T)
-  }
+
   
-temp_data <- merge (tmax, tmin)
+temp_data <- climate.orig$Ta
 
-temp_data <- temp_data [order(temp_data$Month, temp_data$Day),]
-
-## start the simulation from June 
-temp_data <- temp_data[245:nrow(temp_data),]
-
-temp_data$position <- seq (from=1, to=length(temp_data$Tmax), by=1)
-
-## added this as I'm not sure how to use both tmin and tmax in a single vector - use this approach and then have time step as 2 or 0.5?
-test <- as.vector (rbind (temp_data$Tmax, temp_data$Tmin))
-
-avg_temp <- ((temp_data$Tmax + temp_data$Tmin)/2)
-
-avg_temp <- rbind(avg_temp, avg_temp)
+## any missing vales, take average over 2 weeks
+fix <- which(is.na(temp_data))
+for (i in fix){
+  temp_data[i] <- mean(temp_data[(i-7):(i+7)], na.rm=T)
+}
 
 forecastForficula <- devRateIBM(
  # tempTS = temp_data$Tmin,
-  tempTS = Tm$Tm,
+  tempTS = temp_data,
   timeStepTS = 1,
   models = list(m_hatchling, m_moult1, m_moult2, m_moult3, m_moult4),
-  numInd = 500,
+  numInd = 5000,
   stocha = 0.04,
-  timeLayEggs = 20)
+  timeLayEggs = 30)
 
 
 par(mar = c(5,5,2,5))
 devRateIBMPlot(ibm = forecastForficula, typeG = "density", threshold = .1)
 
 par(new=T)
-with (temp_data, plot (position, Tmax, pch=16, axes=F, xlab=NA, ylab=NA, cex=0.6, col="light grey"))
+with (climate.orig, plot (Julday, Ta, pch=16, axes=F, xlab=NA, ylab=NA, cex=0.6, col="light grey"))
 axis(side = 4)
 mtext(side = 4, line = 3, 'Daily Max Temperature')
 abline (23, 0)
@@ -258,9 +246,9 @@ par(mar = c(5,5,2,5))
 devRateIBMPlot(ibm = forecastForficula, typeG = "hist")
 
 par(new=T)
-with (temp_data, plot (position, Tmax, pch=16, axes=F, xlab=NA, ylab=NA, cex=0.6, col="light blue"))
+with (climate.orig, plot (Julday, Ta, pch=16, axes=F, xlab=NA, ylab=NA, cex=0.6, col="light blue"))
 axis(side = 4)
-mtext(side = 4, line = 3, 'Daily Max Temperature')
+mtext(side = 4, line = 3, 'Daily Avg. Temperature')
 abline (23, 0)
 
 

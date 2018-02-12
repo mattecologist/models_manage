@@ -12,6 +12,7 @@ library (maptools)
 library (ggplot2)
 #### GBIF data
 library (rgbif)
+library (rJava)
 
 #######################################################################
 update_dist=FALSE
@@ -245,7 +246,9 @@ locs <- sppDF[,1:2]
 ###################################################################################################
 library (dismo)
 
-jar <- paste("/home/hil32c/R/x86_64-pc-linux-gnu-library/3.4/dismo/java/maxent.jar")
+jar <- paste("./maxent/maxent.jar")
+
+
 
 file.exists(jar) ## must be true!
 
@@ -307,11 +310,11 @@ max2SWD <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/max2SWD',sep=""),
                          "noremoveduplicates"))
 
 max1.pred <- predict(max1SWD, Australia, args="outputformat=logistic",
-                    filename=paste(wd, '/max1/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                    filename=paste(wd, '/max1SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
                      progress="text")
 
 max2.pred <- predict(max2SWD, Australia, args="outputformat=logistic",
-                     filename=paste(wd, '/max2/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                     filename=paste(wd, '/max2SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
                      progress="text")
 
 ####### Plot up the map quickly....
@@ -405,7 +408,7 @@ D.overlap <- ecospat.niche.overlap(grid.clim.nat, grid.clim.inv, cor=T)$D
 D.overlap
 
 
-## boost the reps up to 100 for sinal
+## boost the reps up to 100 for final
 eq.test <- ecospat.niche.equivalency.test(grid.clim.nat, grid.clim.inv,rep=10, alternative = "greater")
 sim.test <- ecospat.niche.similarity.test (grid.clim.nat, grid.clim.inv, rep=10, alternative = "greater",rand.type=2)
 ecospat.plot.overlap.test(eq.test, "D", "Equivalency")
