@@ -64,14 +64,29 @@ proj_dist <- data.frame(cbind("species" = "Forficula auricularia", projdata[, c(
 colnames (proj_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 dist <- rbind (dist, proj_dist)
 
+
+
+write.csv (dist, file="complete_dist.csv", row.names = FALSE)
+}
+
+####### Add in project data
+## note: for Vic and SA, we haven't got the field recorded lat-longs yet.
+
+this.dat <- read.csv("./data/european_earwig_grdc.csv", header=T)
+
+this.dat.pres <- data.frame(cbind("Species" = "Forficula auricularia", this.dat[,c("LATITUDE", "LONGITUDE")][this.dat$Present == 1,]))
+colnames (this.dat.pres) <- c("species",  "decimalLatitude", "decimalLongitude") 
+
+this.dat.abs <- data.frame(cbind("Species" = "Forficula auricularia", this.dat[,c("LATITUDE", "LONGITUDE")][this.dat$Present == 0,]))
+colnames (this.dat.abs) <- c("species",  "decimalLatitude", "decimalLongitude") 
+
+dist <- rbind (dist, this.dat.pres)
+
+
 ## From the 2017 Quarrell et al paper
 quarrell_data <- read.csv ("./data/european_earwig_Quarrell.csv", header=T)
 quarrell_dist <- data.frame(cbind("species" = "Forficula auricularia", quarrell_data[, c("Latitude", "Longitude")]))
 colnames (quarrell_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
-dist <- rbind (dist, quarrell_dist)
-
-write.csv (dist, file="complete_dist.csv", row.names = FALSE)
-}
 
 
 ### Begin analysis
@@ -83,7 +98,7 @@ write.csv (dist, file="complete_dist.csv", row.names = FALSE)
 bioclimall <- stack("./worldclim/bioclimall_clipped.grd")
 
 ## subset to most important variables. will expand on this section eventually with methodology.
-biovar <- subset(bioclimall, c(#"bio02",
+biovar <- subset(bioclimall, c("bio02",
                                "bio03",
                                "bio05",
                                "bio06",
@@ -91,11 +106,11 @@ biovar <- subset(bioclimall, c(#"bio02",
                                "bio13",
                                "bio14",
                                "bio15"))
-
+## human influence index
 hii <- raster ("hii_10min.tif")
 hii <- resample (hii, biovar[[1]])
 
-biovar <- stack(biovar, hii)
+#biovar <- stack(biovar, hii)
 
 ##  create a reference raster from this, rescale the points to 1 per grid cell 
 ##  and create a new data.frame with this new distribution dataset.
@@ -208,8 +223,9 @@ if (file.exists("earwigs_global_alldata.grd")){
   writeRaster(alldata, filename="earwigs_global_alldata.grd", overwrite=TRUE)
 }
 
+background.ras <- alldata
 
-background <- as.data.frame(randomPoints(alldata, 40000))
+background <- as.data.frame(randomPoints(background.ras, 40000))
 
 background$pa <- 0
 background.df <- as.data.frame(extract (biovar, background[,1:2]))
@@ -264,25 +280,38 @@ wd <- getwd()
 #                      progress="text", overwrite=TRUE)
 
 
+## use only the presence points relevant to the model background
 
-pres.env <- sppDF[,4:11]
+in_or_out <- extract(background.ras, sppDF[,1:2])
+pres.env <- sppDF[,4:11][which (in_or_out==1),]
 
 bg.env <- background.df
 pbg.env <- rbind(pres.env, bg.env)
-pbg.which <- c(rep(1, nrow(sppDF)), rep(0, nrow(bg.env)))
+pbg.which <- c(rep(1, nrow(pres.env)), rep(0, nrow(bg.env)))
+
+#default settings
 
 max1SWD <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/max1SWD',sep=""),
                   args=c("beta_threshold=-1", 
-                        "-P",  # response curves
+                         "-P"))
+
+## point-process settings 
+max2SWD <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/max2SWD',sep=""),
+                  args=c("beta_threshold=-1", 
+                        "-P", #response curves
                         "noautofeature", 
                         "nothreshold", 
                         "noproduct",
                         "maximumbackground=40000",
-                      # "noaddsamplestobackground",  ## this is not working!
+                        "noaddsamplestobackground",  ## this is not working!
                          "noremoveduplicates"))
 
-max1.pred <- predict(max1SWD, Australia, args="outputformat=raw",
+max1.pred <- predict(max1SWD, Australia, args="outputformat=logistic",
                     filename=paste(wd, '/max1/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                     progress="text")
+
+max2.pred <- predict(max2SWD, Australia, args="outputformat=logistic",
+                     filename=paste(wd, '/max2/pred.asc', sep=""), format="ascii", overwrite=TRUE,
                      progress="text")
 
 ####### Plot up the map quickly....
@@ -296,7 +325,7 @@ sites[2, 1:3] <- c("Elmore", -36.4968, 144.6088)
 sites$lat <- as.numeric(sites$lat)
 sites$long <- as.numeric(sites$long)
 
-gplot(max1.pred) + geom_tile(aes(fill = value)) +
+gplot(max2.pred) + geom_tile(aes(fill = value)) +
   #scale_fill_gradient(low = 'white', high = 'dark blue') +
   scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
   geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
@@ -307,7 +336,19 @@ gplot(max1.pred) + geom_tile(aes(fill = value)) +
   geom_point (data=sites, aes (long, lat), colour="green", size=2)+
   geom_point (data=quarrell_dist , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
   #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle ("Forficula auricularia Maxent SDM")
+  ggtitle (paste0("Forficula auricularia Maxent (point process) SDM AUC = ", max2SWD@results["Training.AUC",]))
+
+gplot(max1.pred) + geom_tile(aes(fill = value)) +
+  #scale_fill_gradient(low = 'white', high = 'dark blue') +
+  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
+  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="green", size=2)+
+  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
+  ggtitle (paste0("Forficula auricularia Maxent (default settings) SDM AUC = ", max1SWD@results["Training.AUC",]))
 
 ################################################################################################################################
 ## Niche shift analysis
@@ -363,10 +404,12 @@ grid.clim.inv <- ecospat.grid.clim.dyn(glob=scores.globclim,
 D.overlap <- ecospat.niche.overlap(grid.clim.nat, grid.clim.inv, cor=T)$D
 D.overlap
 
-#eq.test <- ecospat.niche.equivalency.test(grid.clim.nat, grid.clim.inv,rep=1000, alternative = "greater")
-#sim.test <- ecospat.niche.similarity.test (grid.clim.nat, grid.clim.inv, rep=1000, alternative = "greater",rand.type=2)
-#ecospat.plot.overlap.test(eq.test, "D", "Equivalency")
-#ecospat.plot.overlap.test(sim.test, "D", "Similarity")
+
+## boost the reps up to 100 for sinal
+eq.test <- ecospat.niche.equivalency.test(grid.clim.nat, grid.clim.inv,rep=10, alternative = "greater")
+sim.test <- ecospat.niche.similarity.test (grid.clim.nat, grid.clim.inv, rep=10, alternative = "greater",rand.type=2)
+ecospat.plot.overlap.test(eq.test, "D", "Equivalency")
+ecospat.plot.overlap.test(sim.test, "D", "Similarity")
 
 
 niche.dyn <- ecospat.niche.dyn.index(grid.clim.nat, grid.clim.inv, intersection = 0.1)
@@ -374,7 +417,8 @@ niche.dyn <- ecospat.niche.dyn.index(grid.clim.nat, grid.clim.inv, intersection 
 ecospat.plot.niche.dyn (grid.clim.nat, grid.clim.inv, quant=0.25, interest=2, title= "Niche Overlap", name.axis1="PC1", name.axis2="PC2")
 ecospat.shift.centroids(scores.sp.nat, scores.sp.inv, scores.clim.nat, scores.clim.inv)
 
-ecospat.niche.dyn.index(grid.clim.nat, grid.clim.inv)
+
+
 
 for (i in names(nat[,4:11])){
 # gridding the native niche

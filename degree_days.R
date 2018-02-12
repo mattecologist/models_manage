@@ -228,13 +228,18 @@ temp_data$position <- seq (from=1, to=length(temp_data$Tmax), by=1)
 ## added this as I'm not sure how to use both tmin and tmax in a single vector - use this approach and then have time step as 2 or 0.5?
 test <- as.vector (rbind (temp_data$Tmax, temp_data$Tmin))
 
+avg_temp <- ((temp_data$Tmax + temp_data$Tmin)/2)
+
+avg_temp <- rbind(avg_temp, avg_temp)
+
 forecastForficula <- devRateIBM(
-  tempTS = temp_data$Tmax,
+ # tempTS = temp_data$Tmin,
+  tempTS = Tm$Tm,
   timeStepTS = 1,
   models = list(m_hatchling, m_moult1, m_moult2, m_moult3, m_moult4),
   numInd = 500,
   stocha = 0.04,
-  timeLayEggs = 60)
+  timeLayEggs = 20)
 
 
 par(mar = c(5,5,2,5))

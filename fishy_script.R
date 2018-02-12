@@ -20,8 +20,6 @@ library (ALA4R)
 
 ## ArcGIS base file
 worldshp <- readShapePoly ("./worldadmin/WorldAdmin.shp") 
-
-
 ## Clip just to Australia
 Aust <- worldshp[worldshp@data$CNTRY_NAME=="Australia",]
 

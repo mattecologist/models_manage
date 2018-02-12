@@ -26,6 +26,7 @@ tempFunc=function(time){
   T=15*(1-cos(2*pi*(time+80)/365))
   return(T)}
 
+## tau function relates to the overall length of the juvenile stage, 
 tauFunc=function(T){
   v=min(minDur+((T-20)/2)^2,maxDur)
   return(v)}

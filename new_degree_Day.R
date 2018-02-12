@@ -103,7 +103,7 @@ return (out)
 }
 
 ## this date was worked out by first appearance of 1st instars, and working backwards in GDD for 2017
-begin.date <- as.Date("2017-03-28")
+begin.date <- as.Date("2017-06-14")
 randates <- runif (10, min=begin.date-14, max=begin.date+14)
 
 outdata <- list()
