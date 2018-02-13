@@ -165,7 +165,7 @@ m_moult2 <- devRateModel(eq = lactin1_95, temp = moult2[,1], devRate = moult2[,2
 m_moult3 <- devRateModel(eq = lactin1_95, temp = moult3[,1], devRate = moult3[,2], startValues = list(aa = 0.15,Tmax=23.5, deltaT=5.5))
 m_moult4 <- devRateModel(eq = lactin1_95, temp = moult4[,1], devRate = moult4[,2], startValues = list(aa = 0.15,Tmax=23, deltaT=5.5))
 
-par(mfrow=c(3, 2))
+par(mfrow=c(2, 3))
 
 devRatePlot(eq= lactin1_95, nlsDR=m_hatchling, temp = hatchling[,1], devRate = hatchling[,2], pch = 16, ylim = c(0, 0.2), main="Hatchling")
 devRatePlot(eq= lactin1_95, nlsDR=m_moult1, temp = moult1[,1], devRate = moult1[,2], pch = 16, ylim = c(0, 0.2), main="Moult 1")
