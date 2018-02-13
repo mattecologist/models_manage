@@ -107,11 +107,13 @@ biovar <- subset(bioclimall, c("bio02",
                                "bio13",
                                "bio14",
                                "bio15"))
+
+
 ## human influence index
 hii <- raster ("hii_10min.tif")
 hii <- resample (hii, biovar[[1]])
 
-#biovar <- stack(biovar, hii)
+biovar <- stack(biovar, hii)
 
 ##  create a reference raster from this, rescale the points to 1 per grid cell 
 ##  and create a new data.frame with this new distribution dataset.
@@ -136,6 +138,8 @@ clim.df <- as.data.frame(extract (biovar, sppP[,1:2]))
 sppDF <- cbind (sppP, clim.df)
 sppDF$layer <- NULL
 
+
+
 ##### Seeting up prediction data############
 ## Need the extent of Australia for defining the ranges
 # Predict the model to the climate values for Australia (data.frame)
@@ -159,7 +163,7 @@ code[code!=0] <- 1
 pca_dat <- extract (biovar, sppP[,1:2])
 pca_dat <- cbind(pca_dat, code)
 pca_dat <- pca_dat[complete.cases(pca_dat),]
-pca_out <- princomp(pca_dat[,1:8])
+pca_out <- princomp(pca_dat[,1:9])
 
 pca.dat <- as.data.frame(pca_out$scores)
 
@@ -169,16 +173,16 @@ pca_dat <- as.data.frame(pca_dat)
 #relevel(pca_dat[,9]) 2 = Africa, 9 = Australia, 19 = Americas, 142 = Asia, 150 = Europe, 
 
 ggplot (pca.dat, aes(Comp.1, Comp.2))+
-  geom_point(aes(colour=as.factor(pca_dat$code)))+
+  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
   theme_minimal()
 
 
 ggplot (pca.dat, aes(Comp.1, Comp.3))+
-  geom_point(aes(colour=as.factor(pca_dat$code)))+
+  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
   theme_minimal()
 
 ggplot (pca.dat, aes(Comp.2, Comp.3))+
-  geom_point(aes(colour=as.factor(pca_dat$code)))+
+  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
   theme_minimal()
 
 
@@ -224,6 +228,7 @@ if (file.exists("earwigs_global_alldata.grd")){
   writeRaster(alldata, filename="earwigs_global_alldata.grd", overwrite=TRUE)
 }
 
+
 background.ras <- alldata
 
 background <- as.data.frame(randomPoints(background.ras, 40000))
@@ -232,6 +237,33 @@ background$pa <- 0
 background.df <- as.data.frame(extract (biovar, background[,1:2]))
 bgDF <- cbind (background, background.df)
 
+##### look at null model and associations with HII and rainfall
+
+null_spp <- randomPoints(background.ras, nrow(sppDF))
+null_sppDF <- as.data.frame(extract(biovar, null_spp))
+null_sppDF <- cbind (null_spp, null_sppDF)
+null_sppDF$species <- "Null"
+
+sppDF2 <- sppDF
+sppDF2$pa <-NULL
+sppDF2$species <- "Actual"
+
+dens_data <- rbind (sppDF2, null_sppDF)
+
+dens_data <- melt(dens_data, id.vars = c("x", "y", "species"))
+
+ggplot (dens_data)+
+  geom_density(aes(x=value, fill=species), alpha=0.5)+
+  facet_wrap(~variable, scales="free")
+
+ggplot (dens_data[dens_data$variable=="hii_10min",])+
+  geom_density(aes(x=value, fill=species), alpha=0.5)
+
+wetMap <- bioclimall[[12]]
+wetMap <- crop (wetMap, Australia[[1]])
+wetMap <- reclassify (wetMap, c(-Inf, 400, NA, 400, Inf, 1))
+
+#################################################################
 
 ## Make modelling data.frame
 #forficula <- rbind (sppDF, bgDF)
@@ -286,7 +318,7 @@ wd <- getwd()
 ## use only the presence points relevant to the model background
 
 in_or_out <- extract(background.ras, sppDF[,1:2])
-pres.env <- sppDF[,4:11][which (in_or_out==1),]
+pres.env <- sppDF[,4:12][which (in_or_out==1),]
 
 bg.env <- background.df
 pbg.env <- rbind(pres.env, bg.env)
@@ -306,7 +338,19 @@ max2SWD <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/max2SWD',sep=""),
                         "nothreshold", 
                         "noproduct",
                         "maximumbackground=40000",
-                        "noaddsamplestobackground",  ## this is not working!
+                        "noaddsamplestobackground",  
+                         "noremoveduplicates"))
+
+## point process - climate only 
+
+max3SWD <- maxent(x=pbg.env[,1:8], p=pbg.which, path=paste(wd,'/max3SWD',sep=""),
+                  args=c("beta_threshold=-1", 
+                         "-P", #response curves
+                         "noautofeature", 
+                         "nothreshold", 
+                         "noproduct",
+                         "maximumbackground=40000",
+                         "noaddsamplestobackground",  
                          "noremoveduplicates"))
 
 max1.pred <- predict(max1SWD, Australia, args="outputformat=logistic",
@@ -317,10 +361,43 @@ max2.pred <- predict(max2SWD, Australia, args="outputformat=logistic",
                      filename=paste(wd, '/max2SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
                      progress="text")
 
+max3.pred <- predict(max3SWD, Australia, args="outputformat=logistic",
+                     filename=paste(wd, '/max3SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                     progress="text")
+
+
+## Look at evaluation on the training dataset
+max1SWD@results["Training.AUC",]
+max2SWD@results["Training.AUC",]
+
+# Point process model does the better job
+
 ####### Plot up the map quickly....
 library (rasterVis)
 library (viridis)
 #map <- myBiomodProj@proj@val[[1]]
+
+gplot(max1.pred) + geom_tile(aes(fill = value)) +
+  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+ 
+  ggtitle (paste0("Forficula auricularia Maxent (default) SDM AUC = ", max1SWD@results["Training.AUC",]))
+
+gplot(max2.pred) + geom_tile(aes(fill = value)) +
+  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10)) +
+  ggtitle (paste0("Forficula auricularia Maxent (point process) SDM AUC = ", max2SWD@results["Training.AUC",]))
+
+gplot(max3.pred) + geom_tile(aes(fill = value)) +
+  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10)) +
+  ggtitle (paste0("Forficula auricularia Maxent (point process / climate only) SDM AUC = ", max2SWD@results["Training.AUC",]))
+
 
 sites <- data.frame("site"=NA, lat="NA", long="NA")
 sites[1:3] <- c("Thoona", -36.3305, 146.0853)
@@ -328,30 +405,59 @@ sites[2, 1:3] <- c("Elmore", -36.4968, 144.6088)
 sites$lat <- as.numeric(sites$lat)
 sites$long <- as.numeric(sites$long)
 
-gplot(max2.pred) + geom_tile(aes(fill = value)) +
+gplot(max3.pred) + geom_tile(aes(fill = value)) +
   #scale_fill_gradient(low = 'white', high = 'dark blue') +
   scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
   geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="black", alpha=0.6, size=2)+
+  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="grey", size=2)+
   coord_equal()+
     scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
     scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  geom_point (data=sites, aes (long, lat), colour="green", size=2)+
+  
   geom_point (data=quarrell_dist , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
   #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle (paste0("Forficula auricularia Maxent (point process) SDM AUC = ", max2SWD@results["Training.AUC",]))
+  ggtitle (paste0("Forficula auricularia Maxent (point process)"))
 
-gplot(max1.pred) + geom_tile(aes(fill = value)) +
+gplot(max3.pred) + geom_tile(aes(fill = value)) +
   #scale_fill_gradient(low = 'white', high = 'dark blue') +
   scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
   geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
   coord_equal()+
   scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
   scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
-  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="green", size=2)+
+  geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="grey", size=2)+
+  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
+  geom_point (data=sites, aes (long, lat), colour="green", size=2)+
   #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle (paste0("Forficula auricularia Maxent (default settings) SDM AUC = ", max1SWD@results["Training.AUC",]))
+  ggtitle (paste0("Forficula auricularia Maxent (point process)"))
+
+gplot(wetMap) + geom_tile(aes(fill = value), alpha=0.8) +
+  scale_fill_gradient(low = 'white', high = 'dark blue') +
+  #scale_fill_viridis(option="magma", begin=0.0, direction=1)+
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
+  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="red", size=2)+
+ # geom_point (data=sites, aes (long, lat), colour="green", size=2)+
+  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
+  ggtitle (paste0("Association with rainfaill (400 mm)"))
+
+gplot(Australia[[9]]) + geom_tile(aes(fill = value), alpha=0.9) +
+  #scale_fill_gradient(low = 'white', high = 'dark blue') +
+  scale_fill_viridis(option="viridis", begin=0.0, direction=-1)+
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  #geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
+  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="red", size=2)+
+  geom_point (data=sites, aes (long, lat), colour="red", size=2)+
+  geom_point (data=quarrell_dist , aes (decimalLongitude, decimalLatitude), colour="red", size=2)+
+  #geom_point (data=sites, aes (long, lat), colour="green", size=2)+
+  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
+  ggtitle (paste0("Forficula auricularia HII index"))
 
 ################################################################################################################################
 ## Niche shift analysis
@@ -375,24 +481,28 @@ clim2 <- clim2[complete.cases(clim2),]
 clim1$pa <- 0
 clim2$pa <- 0
 
-clim1 <- clim1[,c(1,2,11,3,4,5,6,7,8, 9, 10)]
-clim2 <- clim2[,c(1,2,11,3,4,5,6,7,8, 9, 10)]
+#clim1 <- clim1[,c(1,2,11,3,4,5,6,7,8, 9, 10, 12)]
+#clim2 <- clim2[,c(1,2,11,3,4,5,6,7,8, 9, 10, 12)]
+
+#clim1 <- clim1[,c(1,2,11,5,6,7,9,12)]
 
 inv <- rbind (occ.sp2, clim2)
 nat <- rbind (occ.sp1, clim1)
 
+inv <- inv[,c(1, 2, 3, 6, 7, 8, 10, 12)]
+nat <- nat[,c(1, 2, 3, 6, 7, 8, 10, 12)]
 
-pca.env <- dudi.pca(rbind(nat,inv)[,4:11],scannf=F,nf=2)
+pca.env <- dudi.pca(rbind(nat,inv)[,4:ncol(nat)],scannf=F,nf=2)
 
 ecospat.plot.contrib(contrib=pca.env$co, eigen=pca.env$eig)
 
 scores.globclim <- pca.env$li
 
-scores.sp.nat <- suprow(pca.env,nat[which(nat[,3]==1),4:11])$li
-scores.sp.inv <- suprow(pca.env,inv[which(inv[,3]==1),4:11])$li
+scores.sp.nat <- suprow(pca.env,nat[which(nat[,3]==1),4:ncol(nat)])$li
+scores.sp.inv <- suprow(pca.env,inv[which(inv[,3]==1),4:ncol(nat)])$li
 
-scores.clim.nat <-suprow(pca.env,nat[,4:11])$li
-scores.clim.inv <-suprow(pca.env,inv[,4:11])$li
+scores.clim.nat <-suprow(pca.env,nat[,4:ncol(nat)])$li
+scores.clim.inv <-suprow(pca.env,inv[,4:ncol(nat)])$li
 
 grid.clim.nat <- ecospat.grid.clim.dyn (glob=scores.globclim,
   glob1=scores.clim.nat,
@@ -423,7 +533,7 @@ ecospat.shift.centroids(scores.sp.nat, scores.sp.inv, scores.clim.nat, scores.cl
 
 
 
-for (i in names(nat[,4:11])){
+for (i in names(nat[,4:ncol(nat)])){
 # gridding the native niche
 grid.clim.t.nat <-ecospat.grid.clim.dyn(glob=as.data.frame(rbind(nat,inv)[,i]),
                                         glob1=as.data.frame(nat[,i]),sp=as.data.frame(nat[which(nat[,3]==1),i]), R=1000, th.sp=0)

@@ -1,40 +1,43 @@
-tmin <- read.csv ("./data/weather/IDCJAC0011_082170_1800_Data.csv")
-tmax <- read.csv ("./data/weather/IDCJAC0010_082170_1800_Data.csv")
-
-
-
-## tmin has one more observation thatn tmax
-tmax <- tmax[307:4349,]
-tmin <- tmin[307:4349,]
+# tmin <- read.csv ("./data/weather/IDCJAC0011_082170_1800_Data.csv")
+# tmax <- read.csv ("./data/weather/IDCJAC0010_082170_1800_Data.csv")
+# 
+# 
+# 
+# ## tmin has one more observation thatn tmax
+# tmax <- tmax[307:4349,]
+# tmin <- tmin[307:4349,]
 
 ## setting up data frame
-degday <- data.frame(cbind(tmax[,c("Year", "Month", "Day", "Maximum.temperature..Degree.C.")], tmin$Minimum.temperature..Degree.C.))
-colnames (degday) <- c("Year", "Month", "Day", "tmax", "tmin")
+#degday <- data.frame(cbind(tmax[,c("Year", "Month", "Day", "Maximum.temperature..Degree.C.")], tmin$Minimum.temperature..Degree.C.))
+#colnames (degday) <- c("Year", "Month", "Day", "tmax", "tmin")
 
+degday <- climate.orig
 
 ## any missing vales, take average over 2 weeks
-fix <- which(is.na(degday$tmax))
+fix <- which(is.na(degday$Tmax))
 for (i in fix){
-  degday[i,4] <- mean(degday[(i-7):(i+7),4], na.rm=T)
+  degday[i,6] <- mean(degday[(i-7):(i+7),6], na.rm=T)
 }
 
-fix <- which(is.na(degday$tmin))
+fix <- which(is.na(degday$Tmin))
 for (i in fix){
   degday[i,5] <- mean(degday[(i-7):(i+7),5], na.rm=T)
 }
 
+fix <- which(is.na(degday$Ta))
+for (i in fix){
+  degday[i,7] <- mean(degday[(i-7):(i+7),7], na.rm=T)
+}
 
 degday$Date <- as.Date(paste0(degday$Year,"/",degday$Month,"/", degday$Day))
 
-## thresholds
-tlow <- 5.3
-thigh <- 19
+
 
 # tempdata = dataframe with "Date", "tmax", "tmin" columns
 
 gdd <- function (tempdata = tempdata, tlow=tlow, thigh=thigh){
   tempdata$GDD <- 0
-  AvgDailyTemp <- (tempdata$tmax + tempdata$tmin)/2
+  AvgDailyTemp <- tempdata$Ta
   
   # if tempdata$Tmax < tlow
   # GDD = GDD + 0
@@ -42,17 +45,17 @@ gdd <- function (tempdata = tempdata, tlow=tlow, thigh=thigh){
   
   # if tempdata$Tmax > tlow & tempdata$Tmin > tlow
   # GDD = GDD + AvgDailyTemp - tlow
-  tempdata$GDD[tempdata$tmax > tlow & tempdata$tmin > tlow] <- AvgDailyTemp[tempdata$tmax > tlow & tempdata$tmin > tlow] - tlow
+  tempdata$GDD[tempdata$Tmax > tlow & tempdata$Tmin > tlow] <- AvgDailyTemp[tempdata$Tmax > tlow & tempdata$Tmin > tlow] - tlow
   
   # if tempdata$Tmax > tlow & tempdata$Tmin < tlow
   # GDD = GDD + (1/pi) * [ (AvgDailyTemp – tlow) * ( ( pi/2 ) – arcsine(theta ) ) + ( a * cos( arcsine( theta ) ) ) ]
-  a <- (tempdata$tmax - tempdata$tmin)/2
+  a <- (tempdata$Tmax - tempdata$Tmin)/2
   theta <- ((tlow - AvgDailyTemp)/a)
   
-  tempdata$GDD[tempdata$tmax > tlow & tempdata$tmin <= tlow] <- (1/pi) * (
-    (AvgDailyTemp[tempdata$tmax > tlow & tempdata$tmin <= tlow] - tlow) * ( ( pi/2 ) -
-                                                                          asin( theta[tempdata$tmax > tlow & tempdata$tmin <= tlow])) + 
-      (a[tempdata$tmax > tlow & tempdata$tmin <= tlow] * cos(asin(theta[tempdata$tmax > tlow & tempdata$tmin <= tlow]))))
+  tempdata$GDD[tempdata$Tmax > tlow & tempdata$Tmin <= tlow] <- (1/pi) * (
+    (AvgDailyTemp[tempdata$Tmax > tlow & tempdata$Tmin <= tlow] - tlow) * ( ( pi/2 ) -
+                                                                          asin( theta[tempdata$Tmax > tlow & tempdata$Tmin <= tlow])) + 
+      (a[tempdata$Tmax > tlow & tempdata$Tmin <= tlow] * cos(asin(theta[tempdata$Tmax > tlow & tempdata$Tmin <= tlow]))))
   
   #if NAs produced:
   ## dodgy fix! 
@@ -97,14 +100,15 @@ colnames (out) <- c("Date", "CGDD")
 
 out$Date <- as.Date(out$Date, origin="1970-01-01")
 
-out$CGDD[nrow(out)] <- 0
+#out$CGDD[nrow(out)] <- 0
 
 return (out)
 }
 
 ## this date was worked out by first appearance of 1st instars, and working backwards in GDD for 2017
-begin.date <- as.Date("2017-06-14")
-randates <- runif (10, min=begin.date-14, max=begin.date+14)
+begin.date <- as.Date("2017-06-15")
+randates <- runif (100, min=begin.date-2, max=begin.date+2)
+
 
 outdata <- list()
 
@@ -112,13 +116,29 @@ idx <- 1
 
 for (i in randates){
 
-
+## The noise in parameters here is from the Moerkens et al paper. 
   
-hatchling.cgdd <- cumulgdd(paste(as.Date(i, origin="1970-01-01")), hatchling, 165.7)
-moult1.cgdd <- cumulgdd(as.Date(max(hatchling.cgdd$Date)), moult1, 101.3)
-moult2.cgdd <- cumulgdd(as.Date(max(moult1.cgdd$Date)), moult2, 87)
-moult3.cgdd <- cumulgdd(as.Date(max(moult2.cgdd$Date)), moult3, 90.7)
-moult4.cgdd <- cumulgdd(as.Date(max(moult3.cgdd$Date)), moult4, 141.6)
+hatchling <- gdd(degday, 5.3+runif(1, -0.8, 0.8), 19)  
+hatchling.cgdd <- cumulgdd(paste(as.Date(i, origin="1970-01-01")), hatchling, 165.7+runif(1, -14.9, 14.9))
+
+moult1 <- gdd(degday, 7.5+runif(1, -0.7, 0.7), 23.3)
+moult1.cgdd <- cumulgdd(as.Date(max(hatchling.cgdd$Date)), moult1, 101.3+runif(1, -11.5, 11.5)) 
+moult1.cgdd$CGDD <- moult1.cgdd$CGDD+max(hatchling.cgdd$CGDD)
+
+moult2 <- gdd(degday, 8.0+runif(1, -0.5, 0.5), 28)
+moult2.cgdd <- cumulgdd(as.Date(max(moult1.cgdd$Date)), moult2, 87+runif(1, -12, 12))
+moult2.cgdd$CGDD <- moult2.cgdd$CGDD+max(moult1.cgdd$CGDD)
+
+moult3 <- gdd(degday, 8.7+runif(1, -0.8, 0.8), 28)
+moult3.cgdd <- cumulgdd(as.Date(max(moult2.cgdd$Date)), moult3, 90.7 +runif(1, -20.2, 20.2))
+moult3.cgdd$CGDD <- moult3.cgdd$CGDD+max(moult2.cgdd$CGDD)
+
+moult4 <- gdd(degday, 8.4+runif(1, -1.7, 1.7), 28)
+moult4.cgdd <- cumulgdd(as.Date(max(moult3.cgdd$Date)), moult4, 141.6+runif(1, -23.1, 23.1))
+moult4.cgdd$CGDD <- moult4.cgdd$CGDD+max(moult3.cgdd$CGDD)
+
+completed <- moult4.cgdd[nrow(moult4.cgdd),]
+completed$Stage <- "Complete"
 
 hatchling.cgdd$Stage <- "hatchling"
 moult1.cgdd$Stage <- "moult1"
@@ -126,32 +146,42 @@ moult2.cgdd$Stage <- "moult2"
 moult3.cgdd$Stage <- "moult3"
 moult4.cgdd$Stage <- "moult4"
 
-all_data <- rbind (hatchling.cgdd, moult1.cgdd, moult2.cgdd, moult3.cgdd, moult4.cgdd)
+all_data <- rbind (hatchling.cgdd, moult1.cgdd, moult2.cgdd, moult3.cgdd, moult4.cgdd, completed)
 
 all_data$run <- paste(idx)
 outdata[[idx]] <- all_data
 
 idx <- idx+1
-CDD <-0
+#CDD <-0
 
 }
 
 all_data <- do.call("rbind", outdata)
 
-
-ggplot (all_data, aes(x=Date, y=CGDD, fill=Stage))+
-  geom_point(aes(colour=Stage))+
+library (ggplot2)
+library (viridis)
+ggplot (all_data, aes(x=Date, y=CGDD))+
+  geom_point(aes(colour=Stage), alpha=0.2, size=2)+
+  scale_color_viridis(discrete = TRUE)+
   stat_smooth(method="loess")
 
+
+library(dplyr)
+out_dates <- all_data %>%
+  group_by(Stage) %>%
+  summarise(max=max(Date), min=min(Date), mean=mean(Date), spread=max(Date)-min(Date))
+
+out_dates <- as.data.frame(out_dates)
+out_dates
     
-degday$CGDD <- degday$GDD[1]
-x = 2
-while (x <= length(degday$GDD)){
-  
-  y = x - 1
-  degday$CGDD[x] <-  degday$CGDD[y] + degday$GDD[x]
-  x = x + 1
-}   
+# degday$CGDD <- degday$GDD[1]
+# x = 2
+# while (x <= length(degday$GDD)){
+#   
+#   y = x - 1
+#   degday$CGDD[x] <-  degday$CGDD[y] + degday$GDD[x]
+#   x = x + 1
+# }   
 
 
 

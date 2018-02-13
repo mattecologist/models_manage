@@ -95,6 +95,8 @@ hatchling <- read.csv ("./data/images/hatchling.csv", header=FALSE)
 hatchling[2][hatchling[2] < .001] <- 0
 hatchling <- round(hatchling, 3)
 
+hatchling <- hatchling[order(hatchling[,1]),]
+
 moult1 <- read.csv ("./data/images/moult1.csv", header=FALSE)
 moult1 [2][moult1 [2] < .001] <- 0
 moult1 <- round(moult1 , 3)
@@ -127,20 +129,20 @@ devRatePlotInfo (eq = briere1_99, sortBy = "ordersp",
 
 ## having troubles estimating the start parameters - think a lot of problem comes from the Tmax threshold.      
       
-      #rT ~ aa * T * (T - Tmin) * (Tmax - T)^(1/2)
-      hatchling$test <- 0.00014 * hatchling$V1 * (hatchling$V1 - 5) * (32 - hatchling$V1)^(1 / 2)
-      plot (hatchling$V2 ~ hatchling$V1)
-      plot (hatchling$test ~ hatchling$V1)
-      
-      
-      moult1$test <- 0.00018 * moult1$V1 * (moult1$V1 - 5.3) * (23.3 - moult1$V1)^(1 / 2)
-      
-      summary (nls (0 ~ f -V2*(1-eta*V1), data=hatchling, start=list(eta=0, f=0.0014))
-               
-               nls (V2 ~ V1, data=hatchling)
-      
-      newMod <- nls(V2 ~ a*V1^b, data=moult1, start = list(a=exp(9.947),b=-2.011))
-      predict(newMod, newdata = data.frame(weeks=c(1,2,3,4,5,6,7,8,9,10)))
+      rT ~ aa * T * (T - Tmin) * (Tmax - T)^(1/2)
+       hatchling$test <- 0.00014 * hatchling$V1 * (hatchling$V1 - 5) * (32 - hatchling$V1)^(1 / 2)
+       plot (hatchling$V2 ~ hatchling$V1)
+       plot (hatchling$test ~ hatchling$V1)
+      # 
+      # 
+      # moult1$test <- 0.00018 * moult1$V1 * (moult1$V1 - 5.3) * (23.3 - moult1$V1)^(1 / 2)
+      # 
+      # summary (nls (0 ~ f -V2*(1-eta*V1), data=hatchling, start=list(eta=0, f=0.0014)))
+      #          
+      #          nls (V2 ~ V1, data=hatchling)
+      # 
+      # newMod <- nls(V2 ~ a*V1^b, data=moult1, start = list(a=exp(9.947),b=-2.011))
+      # predict(newMod, newdata = data.frame(weeks=c(1,2,3,4,5,6,7,8,9,10)))
 
 m_hatchling <- devRateModel(eq = briere1_99, temp = hatchling[,1], devRate = hatchling[,2], startValues = list(aa = 0.00014, Tmin= 5.3, Tmax=19))
 m_moult1 <- devRateModel(eq = briere1_99, temp = moult1[,1], devRate = moult1[,2], startValues = list(aa = 0.00018, Tmin= 7.5, Tmax=23.3))
@@ -158,9 +160,9 @@ m_moult4 <- devRateModel(eq = taylor_81, temp = moult4[,1], devRate = moult4[,2]
 
 ##Lactin model: rT ~ exp(aa * T) - exp(aa * Tmax - (Tmax - T)/deltaT)
 m_hatchling <- devRateModel(eq = lactin1_95, temp = hatchling[,1], devRate = hatchling[,2], startValues = list(aa = 0.15,Tmax=19, deltaT=5))
-m_moult1 <- devRateModel(eq = lactin1_95, temp = moult1[,1], devRate = moult1[,2], startValues = list(aa = 0.15,Tmax=23, deltaT=5.5))
-m_moult2 <- devRateModel(eq = lactin1_95, temp = moult2[,1], devRate = moult2[,2], startValues = list(aa = 0.15,Tmax=23, deltaT=5.5))
-m_moult3 <- devRateModel(eq = lactin1_95, temp = moult3[,1], devRate = moult3[,2], startValues = list(aa = 0.15,Tmax=23, deltaT=5.5))
+m_moult1 <- devRateModel(eq = lactin1_95, temp = moult1[,1], devRate = moult1[,2], startValues = list(aa = 0.15,Tmax=23.3, deltaT=5.5))
+m_moult2 <- devRateModel(eq = lactin1_95, temp = moult2[,1], devRate = moult2[,2], startValues = list(aa = 0.15,Tmax=23.4, deltaT=5.5))
+m_moult3 <- devRateModel(eq = lactin1_95, temp = moult3[,1], devRate = moult3[,2], startValues = list(aa = 0.15,Tmax=23.5, deltaT=5.5))
 m_moult4 <- devRateModel(eq = lactin1_95, temp = moult4[,1], devRate = moult4[,2], startValues = list(aa = 0.15,Tmax=23, deltaT=5.5))
 
 par(mfrow=c(3, 2))
@@ -245,11 +247,12 @@ par(mar = c(5,5,2,5))
 
 devRateIBMPlot(ibm = forecastForficula, typeG = "hist")
 
+
 par(new=T)
 with (climate.orig, plot (Julday, Ta, pch=16, axes=F, xlab=NA, ylab=NA, cex=0.6, col="light blue"))
 axis(side = 4)
 mtext(side = 4, line = 3, 'Daily Avg. Temperature')
-abline (23, 0)
+#abline (23, 0)
 
 
 

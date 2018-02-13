@@ -35,7 +35,7 @@ Ta <- hour.climate.data %>%
 
 climate.orig$Ta <- Ta$m
 
-
+##### go back to the degree day script...
 
 
 stations <- c("Benalla")
