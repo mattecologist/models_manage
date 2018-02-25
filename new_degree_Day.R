@@ -13,6 +13,8 @@
 
 degday <- climate.orig
 
+degday <- thoona_all
+
 ## any missing vales, take average over 2 weeks
 fix <- which(is.na(degday$Tmax))
 for (i in fix){
@@ -107,6 +109,7 @@ return (out)
 
 ## this date was worked out by first appearance of 1st instars, and working backwards in GDD for 2017
 begin.date <- as.Date("2017-06-15")
+#begin.date <- as.Date("2017-09-28")
 randates <- runif (100, min=begin.date-2, max=begin.date+2)
 
 
@@ -173,6 +176,7 @@ out_dates <- all_data %>%
 
 out_dates <- as.data.frame(out_dates)
 out_dates
+
     
 # degday$CGDD <- degday$GDD[1]
 # x = 2

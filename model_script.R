@@ -13,6 +13,7 @@ library (ggplot2)
 #### GBIF data
 library (rgbif)
 library (rJava)
+library (reshape2)
 
 #######################################################################
 update_dist=FALSE
@@ -98,22 +99,37 @@ colnames (quarrell_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 
 bioclimall <- stack("./worldclim/bioclimall_clipped.grd")
 
-## subset to most important variables. will expand on this section eventually with methodology.
-biovar <- subset(bioclimall, c("bio02",
-                               "bio03",
-                               "bio05",
-                               "bio06",
-                               "bio07",
-                               "bio13",
-                               "bio14",
-                               "bio15"))
+# ## subset to most important variables. will expand on this section eventually with methodology.
+# biovar <- subset(bioclimall, c("bio02",
+#                                "bio03",
+#                                "bio05",
+#                                "bio06",
+#                                "bio07",
+#                                "bio13",
+#                                "bio14",
+#                                "bio15"))
 
+biovar <- subset(bioclimall, c("bio04",
+                               "bio12",
+                               "bio18",
+                               "bio19"))
 
 ## human influence index
 hii <- raster ("hii_10min.tif")
 hii <- resample (hii, biovar[[1]])
 
 biovar <- stack(biovar, hii)
+
+#biovar <- subset(bioclimall, c("bio02", "bio04", "bio10", "bio19",
+                               #"bio01", bio1 tends to mask everything else.
+#                               "bio15"))
+#biovar <- subset(bioclimall, c("bio02", "bio10", "bio19"))
+
+
+#biovar <- subset(bioclimall, c("bio01", "bio03", "bio05", "bio06",
+#                                "bio07", "bio08", "bio09", "bio11",
+#                                "bio12", "bio13", "bio14", "bio15",
+#                                "bio16", "bio17", "bio18"))
 
 ##  create a reference raster from this, rescale the points to 1 per grid cell 
 ##  and create a new data.frame with this new distribution dataset.
@@ -163,7 +179,7 @@ code[code!=0] <- 1
 pca_dat <- extract (biovar, sppP[,1:2])
 pca_dat <- cbind(pca_dat, code)
 pca_dat <- pca_dat[complete.cases(pca_dat),]
-pca_out <- princomp(pca_dat[,1:9])
+pca_out <- princomp(pca_dat[,1:ncol(pca_dat)])
 
 pca.dat <- as.data.frame(pca_out$scores)
 
@@ -277,6 +293,7 @@ locs <- sppDF[,1:2]
 
 ###################################################################################################
 library (dismo)
+library (rmaxent) ## remember to cite this...
 
 jar <- paste("./maxent/maxent.jar")
 
@@ -318,7 +335,7 @@ wd <- getwd()
 ## use only the presence points relevant to the model background
 
 in_or_out <- extract(background.ras, sppDF[,1:2])
-pres.env <- sppDF[,4:12][which (in_or_out==1),]
+pres.env <- sppDF[,4:ncol(sppDF)][which (in_or_out==1),]
 
 bg.env <- background.df
 pbg.env <- rbind(pres.env, bg.env)
@@ -343,7 +360,7 @@ max2SWD <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/max2SWD',sep=""),
 
 ## point process - climate only 
 
-max3SWD <- maxent(x=pbg.env[,1:8], p=pbg.which, path=paste(wd,'/max3SWD',sep=""),
+max3SWD <- maxent(x=pbg.env[,1:4], p=pbg.which, path=paste(wd,'/max3SWD',sep=""),
                   args=c("beta_threshold=-1", 
                          "-P", #response curves
                          "noautofeature", 
@@ -369,8 +386,19 @@ max3.pred <- predict(max3SWD, Australia, args="outputformat=logistic",
 ## Look at evaluation on the training dataset
 max1SWD@results["Training.AUC",]
 max2SWD@results["Training.AUC",]
-
+max3SWD@results["Training.AUC",]
 # Point process model does the better job
+
+
+me1 <- project (max1SWD, biovar)
+me2 <- project (max2SWD, biovar)
+me3 <- project (max3SWD, biovar)
+
+occ <- sppDF[,1:2]
+colnames (occ) <- c("lon", "lat")
+
+ic(stack(me1$prediction_raw, me2$prediction_raw, me3$prediction_raw), 
+   occ, list(max1SWD, max2SWD, max3SWD))
 
 ####### Plot up the map quickly....
 library (rasterVis)
@@ -398,6 +426,15 @@ gplot(max3.pred) + geom_tile(aes(fill = value)) +
   scale_y_continuous(expand = c(0,0), limits= c(-45, -10)) +
   ggtitle (paste0("Forficula auricularia Maxent (point process / climate only) SDM AUC = ", max2SWD@results["Training.AUC",]))
 
+parse_lambdas(max1SWD)
+
+lim1 <- limiting(Australia, max2SWD)
+levelplot(lim1, col.regions=rainbow) +
+  layer(sp.points(SpatialPoints(occ), pch=20, col=1))
+
+lim2 <- limiting(Australia, max2SWD)
+levelplot(lim2, col.regions=rainbow) +
+  layer(sp.points(SpatialPoints(occ), pch=20, col=1))
 
 sites <- data.frame("site"=NA, lat="NA", long="NA")
 sites[1:3] <- c("Thoona", -36.3305, 146.0853)
@@ -405,7 +442,7 @@ sites[2, 1:3] <- c("Elmore", -36.4968, 144.6088)
 sites$lat <- as.numeric(sites$lat)
 sites$long <- as.numeric(sites$long)
 
-gplot(max3.pred) + geom_tile(aes(fill = value)) +
+gplot(max2.pred) + geom_tile(aes(fill = value)) +
   #scale_fill_gradient(low = 'white', high = 'dark blue') +
   scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
   geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
@@ -489,8 +526,12 @@ clim2$pa <- 0
 inv <- rbind (occ.sp2, clim2)
 nat <- rbind (occ.sp1, clim1)
 
-inv <- inv[,c(1, 2, 3, 6, 7, 8, 10, 12)]
-nat <- nat[,c(1, 2, 3, 6, 7, 8, 10, 12)]
+## just on climate....
+inv <- inv[,1:ncol(inv)-1]
+nat <- nat[,1:ncol(nat)-1]
+
+#inv <- inv[,c(1, 2, 3, 6, 7, 8, 10, 12)]
+#nat <- nat[,c(1, 2, 3, 6, 7, 8, 10, 12)]
 
 pca.env <- dudi.pca(rbind(nat,inv)[,4:ncol(nat)],scannf=F,nf=2)
 
