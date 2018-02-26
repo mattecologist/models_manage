@@ -13,7 +13,7 @@
 
 degday <- climate.orig
 
-degday <- thoona_all
+degday <- read.csv("./data/thoona_all.csv")
 
 ## any missing vales, take average over 2 weeks
 fix <- which(is.na(degday$Tmax))
@@ -168,6 +168,9 @@ ggplot (all_data, aes(x=Date, y=CGDD))+
   scale_color_viridis(discrete = TRUE)+
   stat_smooth(method="loess")
 
+ggplot (all_data, aes(x=Date, y=CGDD))+
+  geom_boxplot(aes(colour=Stage), alpha=0.2, size=2)+
+  scale_color_viridis(discrete = TRUE)
 
 library(dplyr)
 out_dates <- all_data %>%
@@ -176,6 +179,9 @@ out_dates <- all_data %>%
 
 out_dates <- as.data.frame(out_dates)
 out_dates
+
+ggplot (all_data[all_data$Stage == "Complete",], aes(Stage, Date))+
+  geom_boxplot()
 
     
 # degday$CGDD <- degday$GDD[1]
