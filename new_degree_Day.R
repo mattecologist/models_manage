@@ -1,34 +1,39 @@
-# tmin <- read.csv ("./data/weather/IDCJAC0011_082170_1800_Data.csv")
-# tmax <- read.csv ("./data/weather/IDCJAC0010_082170_1800_Data.csv")
-# 
-# 
-# 
-# ## tmin has one more observation thatn tmax
-# tmax <- tmax[307:4349,]
-# tmin <- tmin[307:4349,]
+##############################################################################################################
+## Earwig day degree models
+## Matt Hill 2018
+## Use and distribute as required..
+##############################################################################################################
 
-## setting up data frame
-#degday <- data.frame(cbind(tmax[,c("Year", "Month", "Day", "Maximum.temperature..Degree.C.")], tmin$Minimum.temperature..Degree.C.))
-#colnames (degday) <- c("Year", "Month", "Day", "tmax", "tmin")
+## Set trial location (Thoona or Elmore)
+trial <- "Thoona"
 
-degday <- climate.orig
 
-degday <- read.csv("./data/thoona_all.csv")
+## house keeping per trial
+## these dates were worked out by first appearance of 1st instars, and working backwards in GDD for 2017
+if (trial == "Elmore"){
+  degday <- read.csv("./data/elmore_all.csv")
+  begin.date <- as.Date("2017-09-28")
+}else { if (trial == "Thoona"){
+  degday <- read.csv("./data/thoona_all.csv")
+  begin.date <- as.Date("2017-06-15") 
+}else{print("Error")
+  degday <- NA}}
+
 
 ## any missing vales, take average over 2 weeks
 fix <- which(is.na(degday$Tmax))
 for (i in fix){
-  degday[i,6] <- mean(degday[(i-7):(i+7),6], na.rm=T)
+  degday[i,"Tmax"] <- mean(degday[(i-7):(i+7),"Tmax"], na.rm=T)
 }
 
 fix <- which(is.na(degday$Tmin))
 for (i in fix){
-  degday[i,5] <- mean(degday[(i-7):(i+7),5], na.rm=T)
+  degday[i,"Tmin"] <- mean(degday[(i-7):(i+7),"Tmin"], na.rm=T)
 }
 
 fix <- which(is.na(degday$Ta))
 for (i in fix){
-  degday[i,7] <- mean(degday[(i-7):(i+7),7], na.rm=T)
+  degday[i,"Ta"] <- mean(degday[(i-7):(i+7),"Ta"], na.rm=T)
 }
 
 degday$Date <- as.Date(paste0(degday$Year,"/",degday$Month,"/", degday$Day))
@@ -64,7 +69,12 @@ gdd <- function (tempdata = tempdata, tlow=tlow, thigh=thigh){
   fix <- which(is.na(tempdata$GDD))  
   
   for (i in fix){
-    tempdata[i,"GDD"] <- mean(tempdata[(i-2):(i+2),"GDD"], na.rm=T)
+    if (i > 2){
+      tempdata[i,"GDD"] <- mean(tempdata[(i-2):(i+2),"GDD"], na.rm=T)
+    }else {
+      tempdata[i,"GDD"] <- mean(tempdata[(i):(i+4),"GDD"], na.rm=T)
+    }
+    
     
   }
   
@@ -107,10 +117,8 @@ out$Date <- as.Date(out$Date, origin="1970-01-01")
 return (out)
 }
 
-## this date was worked out by first appearance of 1st instars, and working backwards in GDD for 2017
-begin.date <- as.Date("2017-06-15")
-#begin.date <- as.Date("2017-09-28")
-randates <- runif (100, min=begin.date-2, max=begin.date+2)
+##########33 RUN THE MODELLLLLS
+randates <- runif (1000, min=begin.date-2, max=begin.date+2)
 
 
 outdata <- list()
