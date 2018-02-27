@@ -38,8 +38,7 @@ for (i in fix){
 
 degday$Date <- as.Date(paste0(degday$Year,"/",degday$Month,"/", degday$Day))
 
-
-
+## The GDD function 
 # tempdata = dataframe with "Date", "tmax", "tmin" columns
 
 gdd <- function (tempdata = tempdata, tlow=tlow, thigh=thigh){
@@ -64,7 +63,7 @@ gdd <- function (tempdata = tempdata, tlow=tlow, thigh=thigh){
                                                                           asin( theta[tempdata$Tmax > tlow & tempdata$Tmin <= tlow])) + 
       (a[tempdata$Tmax > tlow & tempdata$Tmin <= tlow] * cos(asin(theta[tempdata$Tmax > tlow & tempdata$Tmin <= tlow]))))
   
-  #if NAs produced:
+  #if NAs produced: Maybe incorporate a triangle method here????
   ## dodgy fix! 
   fix <- which(is.na(tempdata$GDD))  
   

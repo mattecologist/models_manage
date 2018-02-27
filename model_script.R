@@ -14,6 +14,9 @@ library (ggplot2)
 library (rgbif)
 library (rJava)
 library (reshape2)
+library (rasterVis)
+library (viridis)
+library (corrplot)
 
 #######################################################################
 update_dist=FALSE
@@ -42,7 +45,7 @@ y <- occurrences(taxon="forficula auricularia",fields=c("latitude","longitude", 
 
 ala_dist <- data.frame(cbind("species" = "Forficula auricularia", y$data[, c("latitude", "longitude")]))
 ala_dist <- ala_dist[complete.cases(ala_dist),]
-colnames (ala_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
+colnames (ala_dist) <- c("species",  "decimalLatitude", "decimalLongitude") ## check the two points that appear to be noether hemispere...
 
 #### add both together
 dist <- rbind (dist, ala_dist)
@@ -51,22 +54,15 @@ dist <- rbind (dist, ala_dist)
 #### Note: this comes from a closed database and I had to gain permission to use this data - not for redistribution.
 #### Skip this if you don't have these data.
 
-appd <- read.csv("./data/Forficula auricularia_290317.csv", header=T)
+appd <- read.csv("./data/Forficula_270218.csv", header=T)
 appd_dist <- appd[,c("Scientific.Name", "Latitude...original", "Longitude...original")]
 colnames (appd_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 dist <- rbind (dist, appd_dist)
 
 #appd2 <- appd[,c("Scientific.Name", "Latitude...original", "Longitude...original", "Data.Resource.Name")] 
 
-## Other data
-#### NOT for redistribution at this point
 
-projdata <- read.csv("./data/european earwig_Sarina.csv", header=T)
-proj_dist <- data.frame(cbind("species" = "Forficula auricularia", projdata[, c("lat", "long")]))
-colnames (proj_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
-dist <- rbind (dist, proj_dist)
-
-
+dist <- dist[complete.cases(dist),]
 
 write.csv (dist, file="complete_dist.csv", row.names = FALSE)
 }
@@ -82,14 +78,23 @@ colnames (this.dat.pres) <- c("species",  "decimalLatitude", "decimalLongitude")
 this.dat.abs <- data.frame(cbind("Species" = "Forficula auricularia", this.dat[,c("LATITUDE", "LONGITUDE")][this.dat$Present == 0,]))
 colnames (this.dat.abs) <- c("species",  "decimalLatitude", "decimalLongitude") 
 
-dist <- rbind (dist, this.dat.pres)
 
+## PESt Facts data
+#### NOT for redistribution at this point
+
+projdata <- read.csv("./data/european earwig_Sarina.csv", header=T)
+proj_dist <- data.frame(cbind("species" = "Forficula auricularia", projdata[, c("lat", "long")]))
+colnames (proj_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
+
+
+grains_dist <- rbind (this.dat.pres, proj_dist)
 
 ## From the 2017 Quarrell et al paper
 quarrell_data <- read.csv ("./data/european_earwig_Quarrell.csv", header=T)
 quarrell_dist <- data.frame(cbind("species" = "Forficula auricularia", quarrell_data[, c("Latitude", "Longitude")]))
 colnames (quarrell_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 
+dist <- rbind(dist, quarrell_dist)
 
 ### Begin analysis
 
@@ -98,47 +103,130 @@ colnames (quarrell_dist) <- c("species",  "decimalLatitude", "decimalLongitude")
 #all_biovar <- getData("worldclim", var = "bio", res = 10) 
 
 bioclimall <- stack("./worldclim/bioclimall_clipped.grd")
-
-# ## subset to most important variables. will expand on this section eventually with methodology.
-# biovar <- subset(bioclimall, c("bio02",
-#                                "bio03",
-#                                "bio05",
-#                                "bio06",
-#                                "bio07",
-#                                "bio13",
-#                                "bio14",
-#                                "bio15"))
-
-biovar <- subset(bioclimall, c("bio04",
-                               "bio12",
-                               "bio18",
-                               "bio19"))
-
 ## human influence index
 hii <- raster ("hii_10min.tif")
-hii <- resample (hii, biovar[[1]])
+hii <- resample (hii, bioclimall[[1]])
+names(hii) <- "hii"
 
-biovar <- stack(biovar, hii)
+bioclimall <- stack(bioclimall, hii)
 
-#biovar <- subset(bioclimall, c("bio02", "bio04", "bio10", "bio19",
-                               #"bio01", bio1 tends to mask everything else.
-#                               "bio15"))
-#biovar <- subset(bioclimall, c("bio02", "bio10", "bio19"))
+##### Seeting up prediction data############
+## Need the extent of Australia for defining the ranges
+# Predict the model to the climate values for Australia (data.frame)
+e <- extent (112, 155, -45, -10)
+Australia <- crop (bioclimall, e)
+#convert to a stack
+Australia <- stack(unstack(Australia))
+#############################################
 
 
-#biovar <- subset(bioclimall, c("bio01", "bio03", "bio05", "bio06",
-#                                "bio07", "bio08", "bio09", "bio11",
-#                                "bio12", "bio13", "bio14", "bio15",
-#                                "bio16", "bio17", "bio18"))
+######## Perform a PCA on the presence data
+code <- extract (Australia[[1]], dist[,3:2])
+code[is.na(code)] <- "Global"
+code[code!="Global"] <- "Australia"
+
+grains_code <- rep("grains", nrow(grains_dist))
+code <- c(code, grains_code)
+
+pca_dat <- as.data.frame(extract (bioclimall, rbind(dist[,3:2], grains_dist[,3:2])))
+pca_dat <- cbind(pca_dat, code)
+pca_dat <- pca_dat[complete.cases(pca_dat),]
+
+pca_out <- princomp(pca_dat[,1:19]) ## just climate data!
+
+pca.dat <- as.data.frame(pca_out$scores)
+
+pca_dat <- as.data.frame(pca_dat)
+
+
+#relevel(pca_dat[,9]) 2 = Africa, 9 = Australia, 19 = Americas, 142 = Asia, 150 = Europe, 
+
+ggplot (pca.dat, aes(Comp.1, Comp.2))+
+  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.3, size=2)+
+  theme_minimal()
+
+
+ggplot (pca.dat, aes(Comp.1, Comp.3))+
+  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
+  theme_minimal()
+
+ggplot (pca.dat, aes(Comp.2, Comp.3))+
+  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
+  theme_minimal()
+
+ggplot (pca.dat[pca_dat$code == "Australia" | pca_dat$code == "grains",], aes(Comp.2, Comp.3))+
+  geom_point(aes(colour=as.factor(pca_dat$code[pca_dat$code == "Australia" | pca_dat$code == "grains"])), alpha=0.6, size=2)+
+  theme_minimal()
+
+components <-summary (pca_out)
+components
+## Comp1 = 84.4% variance, Comp2 = 13% deviance
+
+components$loadings
+#Comp 1 = #bio04, bio12, bio13, bio16, bio17, bio18, bio19
+#Comp 2 = #bio04, bio12, bio18, bio19
+
+
+keep_vars <-  c("bio04",
+                "bio12",
+                "bio13",
+                "bio16",
+                "bio17",
+                "bio18",
+                "bio19",
+                "hii")
+
+### examine correlations (across training background rather than presence points)
+
+if (file.exists("earwigs_global_alldata.grd")){
+  alldata <- raster ("earwigs_global_alldata.grd")
+} else{
+  temp <- resample (inv_ras, nat_ras)
+  alldata <-sum(stack(list(nat_ras, temp)), na.rm=T)
+  alldata <- reclassify(alldata, c(-Inf, 0, NA))
+  writeRaster(alldata, filename="earwigs_global_alldata.grd", overwrite=TRUE)
+}
+
+
+background <- as.data.frame(randomPoints(alldata, 40000))
+
+background.df <- as.data.frame(extract (bioclimall[[keep_vars]], background[,1:2]))
+background.df <- background.df[complete.cases(background.df),]
+
+pca_cor <- cor(background.df)
+corrplot (pca_cor, method="number")
+
+#bio12 & bio13 correlated at 0.95
+#bio12 & bio16 correlated at 0.96
+#bio12 & bio17 correlated at 0.83
+#bio12 & bio18 correlated at 0.9
+#bio12 & bio19 correlated at 0.83
+
+#bio13 & bio18 correlated at 0.79
+#bio13 $ bio19 correlated at 0.76
+
+#bio16 & bio18 correlated at 0.79
+#bio16 & bio19 correlated at 0.78
+
+#bio17 & bio19 correlated at 0.72
+
+### Keeping these correlations in mind, running the models first and revising after seems best way to go...
+
+biovar <- subset(bioclimall, keep_vars)
+Australia <- subset(Australia, keep_vars)
+
 
 ##  create a reference raster from this, rescale the points to 1 per grid cell 
 ##  and create a new data.frame with this new distribution dataset.
 refrast <- biovar[[1]]
 sppR <- rasterize (dist[,3:2], refrast)
-sppP <- data.frame (rasterToPoints (sppR))
+sppG <- rasterize (grains_dist[,3:2], refrast)
+
+## for intial models we want to use ALL DATA
+sppP <- data.frame (rbind(rasterToPoints (sppR), rasterToPoints(sppG)))
 
 ### To show now we only have 1 unique point per grid cell:
-length (dist[,1])
+length (rbind(dist[,1], grains_dist[,1]))
 length (sppP[,1])
 
 ## load the worldmap from the maptools package
@@ -156,57 +244,13 @@ sppDF$layer <- NULL
 
 
 
-##### Seeting up prediction data############
-## Need the extent of Australia for defining the ranges
-# Predict the model to the climate values for Australia (data.frame)
-e <- extent (112, 155, -45, -10)
-Australia <- crop (biovar, e)
-#convert to a stack
-Australia <- stack(unstack(Australia))
-#############################################
 
 
-######## Perform a PCA on the presence data
-locs.dat <- (sppP[,1:2])
-coordinates (locs.dat) <- ~x+y
-wrld_simpl@proj4string <- CRS("+proj=longlat +datum=WGS84")
-locs.dat@proj4string <- CRS("+proj=longlat +datum=WGS84")
 
-code <- extract (Australia[[1]], sppP[,1:2])
-code[is.na(code)] <- 0
-code[code!=0] <- 1
-
-pca_dat <- extract (biovar, sppP[,1:2])
-pca_dat <- cbind(pca_dat, code)
-pca_dat <- pca_dat[complete.cases(pca_dat),]
-pca_out <- princomp(pca_dat[,1:ncol(pca_dat)])
-
-pca.dat <- as.data.frame(pca_out$scores)
-
-pca_dat <- as.data.frame(pca_dat)
-
-
-#relevel(pca_dat[,9]) 2 = Africa, 9 = Australia, 19 = Americas, 142 = Asia, 150 = Europe, 
-
-ggplot (pca.dat, aes(Comp.1, Comp.2))+
-  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
-  theme_minimal()
-
-
-ggplot (pca.dat, aes(Comp.1, Comp.3))+
-  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
-  theme_minimal()
-
-ggplot (pca.dat, aes(Comp.2, Comp.3))+
-  geom_point(aes(colour=as.factor(pca_dat$code)), alpha=0.6, size=2)+
-  theme_minimal()
 
 
 ###################################################################################################
 ## Niche analysis
-
-## Coding
-sppP$code <- code
 
 ## check if the background files exist, if not, will go ahead and make them using the "background_builder" function
 
@@ -235,15 +279,6 @@ if (file.exists("earwigs_global.grd")){
   writeRaster(nat_ras, filename = "earwigs_global.grd", overwrite=TRUE)
 }
 
-if (file.exists("earwigs_global_alldata.grd")){
-  alldata <- raster ("earwigs_global_alldata.grd")
-} else{
-  temp <- resample (inv_ras, nat_ras)
-  alldata <-sum(stack(list(nat_ras, temp)), na.rm=T)
-  alldata <- reclassify(alldata, c(-Inf, 0, NA))
-  writeRaster(alldata, filename="earwigs_global_alldata.grd", overwrite=TRUE)
-}
-
 
 background.ras <- alldata
 
@@ -253,43 +288,8 @@ background$pa <- 0
 background.df <- as.data.frame(extract (biovar, background[,1:2]))
 bgDF <- cbind (background, background.df)
 
-##### look at null model and associations with HII and rainfall
 
-null_spp <- randomPoints(background.ras, nrow(sppDF))
-null_sppDF <- as.data.frame(extract(biovar, null_spp))
-null_sppDF <- cbind (null_spp, null_sppDF)
-null_sppDF$species <- "Null"
 
-sppDF2 <- sppDF
-sppDF2$pa <-NULL
-sppDF2$species <- "Actual"
-
-dens_data <- rbind (sppDF2, null_sppDF)
-
-dens_data <- melt(dens_data, id.vars = c("x", "y", "species"))
-
-ggplot (dens_data)+
-  geom_density(aes(x=value, fill=species), alpha=0.5)+
-  facet_wrap(~variable, scales="free")
-
-ggplot (dens_data[dens_data$variable=="hii_10min",])+
-  geom_density(aes(x=value, fill=species), alpha=0.5)
-
-wetMap <- bioclimall[[12]]
-wetMap <- crop (wetMap, Australia[[1]])
-wetMap <- reclassify (wetMap, c(-Inf, 400, NA, 400, Inf, 1))
-
-#################################################################
-
-## Make modelling data.frame
-#forficula <- rbind (sppDF, bgDF)
-#forficula <- forficula[complete.cases(forficula),]
-#forficula <- na.omit (forficula)
-
-locs <- sppDF[,1:2]
-
-#varsstack <- crop(biovar, nat_ras)
-#varsstack <- mask(varsstack, nat_ras)
 
 ###################################################################################################
 library (dismo)
@@ -297,43 +297,11 @@ library (rmaxent) ## remember to cite this...
 
 jar <- paste("./maxent/maxent.jar")
 
-
-
 file.exists(jar) ## must be true!
 
 wd <- getwd()
 
-## This vway of implementing maxent from the Renner et al. paper seems too restrictive.
-# max1 <- maxent(x=varsstack, p=locs, path=paste(wd,'/max1',sep=""),
-#               args=c("-P", "noautofeature", "nothreshold", "noproduct", 
-#               "maximumbackground=400000","noaddsamplestobackground","noremoveduplicates"))
-# 
-# max1.pred <- predict(max1, Australia, args="outputformat=raw",
-#               filename=paste(wd, '/max1/pred.asc', sep=""), format="ascii",
-#               progress="text", overwrite=TRUE)
-# 
-# max2.pred <- predict(max1, biovar, args="outputformat=raw",
-#                      filename=paste(wd, '/max1/pred2.asc', sep=""), format="ascii",
-#                      progress="text")
-
-# #Start with a default map
-# max2 <- maxent(x=varsstack, p=locs, path=paste(wd,'/max2',sep=""),
-#                args=c("beta_threshold=-1", 
-#                       "-P",  # response curves
-#                       "noautofeature", 
-#                       "nothreshold", 
-#                       "noproduct",
-#                       "maximumbackground=40000",
-#                       "noaddsamplestobackground",  
-#                       "noremoveduplicates"))
-# 
-# max2.pred <- predict(max2, Australia, args="outputformat=raw",
-#                      filename=paste(wd, '/max2/pred.asc', sep=""), format="ascii",
-#                      progress="text", overwrite=TRUE)
-
-
 ## use only the presence points relevant to the model background
-
 in_or_out <- extract(background.ras, sppDF[,1:2])
 pres.env <- sppDF[,4:ncol(sppDF)][which (in_or_out==1),]
 
@@ -370,25 +338,11 @@ max3SWD <- maxent(x=pbg.env[,1:4], p=pbg.which, path=paste(wd,'/max3SWD',sep="")
                          "noaddsamplestobackground",  
                          "noremoveduplicates"))
 
-max1.pred <- predict(max1SWD, Australia, args="outputformat=logistic",
-                    filename=paste(wd, '/max1SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
-                     progress="text")
-
-max2.pred <- predict(max2SWD, Australia, args="outputformat=logistic",
-                     filename=paste(wd, '/max2SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
-                     progress="text")
-
-max3.pred <- predict(max3SWD, Australia, args="outputformat=logistic",
-                     filename=paste(wd, '/max3SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
-                     progress="text")
-
-
 ## Look at evaluation on the training dataset
 max1SWD@results["Training.AUC",]
 max2SWD@results["Training.AUC",]
 max3SWD@results["Training.AUC",]
 # Point process model does the better job
-
 
 me1 <- project (max1SWD, biovar)
 me2 <- project (max2SWD, biovar)
@@ -400,17 +354,58 @@ colnames (occ) <- c("lon", "lat")
 ic(stack(me1$prediction_raw, me2$prediction_raw, me3$prediction_raw), 
    occ, list(max1SWD, max2SWD, max3SWD))
 
-####### Plot up the map quickly....
-library (rasterVis)
-library (viridis)
-#map <- myBiomodProj@proj@val[[1]]
+################## Limiting factor analysis
+lim1 <- limiting(Australia, max2SWD)
+levelplot(lim1, col.regions=rainbow) +
+  layer(sp.points(SpatialPoints(occ), pch=20, col=1))
 
-gplot(max1.pred) + geom_tile(aes(fill = value)) +
-  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
-  coord_equal()+
-  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
-  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+ 
-  ggtitle (paste0("Forficula auricularia Maxent (default) SDM AUC = ", max1SWD@results["Training.AUC",]))
+## Examine the limiting factor analysis, and then the percent contribution and perumtation importance as determined by maxent
+## the following are the retained variables 
+
+#bio12, bio16, bio17 could all be dropped based on permutation importance, while there was a slight drop in AUC and AICc, 
+# its better to have fewer variables when examining the trasnferability and niche shift in more detail. 
+
+#update keep_vars 
+final_vars <-  c("bio04",
+                 "bio13",# not much difference including bio13. Bio13 does restrict the map a bit better.
+                 "bio18",
+                 "bio19",
+                 "hii")
+
+## point-process settings 
+max4SWD <- maxent(x=pbg.env[,c(final_vars)], p=pbg.which, path=paste(wd,'/max4SWD',sep=""),
+                  args=c("beta_threshold=-1", 
+                         "-P", #response curves
+                         "noautofeature", 
+                         "nothreshold", 
+                         "noproduct",
+                         "maximumbackground=40000",
+                         "noaddsamplestobackground",  
+                         "noremoveduplicates"))
+
+max4SWD@results["Training.AUC",]
+
+me4 <- project (max4SWD, biovar)
+
+ic(stack(me2$prediction_raw, me4$prediction_raw), 
+   occ, list(max2SWD, max4SWD))
+
+### interestingly, the model with reduced varibles as a slightly higher AIC than the previous one...
+
+lim2 <- limiting(Australia, max4SWD)
+levelplot(lim2, col.regions=rainbow) +
+  layer(sp.points(SpatialPoints(occ), pch=20, col=1))
+
+
+####### Plot up the two map quickly....
+
+max2.pred <- predict(max2SWD, Australia, args="outputformat=logistic",
+                     filename=paste(wd, '/max2SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                     progress="text")
+
+max4.pred <- predict(max4SWD, Australia, args="outputformat=logistic",
+                     filename=paste(wd, '/max4SWD/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                     progress="text")
 
 gplot(max2.pred) + geom_tile(aes(fill = value)) +
   scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
@@ -419,22 +414,13 @@ gplot(max2.pred) + geom_tile(aes(fill = value)) +
   scale_y_continuous(expand = c(0,0), limits= c(-45, -10)) +
   ggtitle (paste0("Forficula auricularia Maxent (point process) SDM AUC = ", max2SWD@results["Training.AUC",]))
 
-gplot(max3.pred) + geom_tile(aes(fill = value)) +
+gplot(max4.pred) + geom_tile(aes(fill = value)) +
   scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
   coord_equal()+
   scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
   scale_y_continuous(expand = c(0,0), limits= c(-45, -10)) +
-  ggtitle (paste0("Forficula auricularia Maxent (point process / climate only) SDM AUC = ", max2SWD@results["Training.AUC",]))
+  ggtitle (paste0("Forficula auricularia Maxent (point process) SDM AUC = ", max4SWD@results["Training.AUC",]))
 
-parse_lambdas(max1SWD)
-
-lim1 <- limiting(Australia, max2SWD)
-levelplot(lim1, col.regions=rainbow) +
-  layer(sp.points(SpatialPoints(occ), pch=20, col=1))
-
-lim2 <- limiting(Australia, max2SWD)
-levelplot(lim2, col.regions=rainbow) +
-  layer(sp.points(SpatialPoints(occ), pch=20, col=1))
 
 sites <- data.frame("site"=NA, lat="NA", long="NA")
 sites[1:3] <- c("Thoona", -36.3305, 146.0853)
@@ -442,96 +428,119 @@ sites[2, 1:3] <- c("Elmore", -36.4968, 144.6088)
 sites$lat <- as.numeric(sites$lat)
 sites$long <- as.numeric(sites$long)
 
-gplot(max2.pred) + geom_tile(aes(fill = value)) +
-  #scale_fill_gradient(low = 'white', high = 'dark blue') +
-  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
-  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  geom_point(data=dist, aes(decimalLongitude, decimalLatitude), colour="grey", size=2)+
-  coord_equal()+
-    scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
-    scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  
-  geom_point (data=quarrell_dist , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
-  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle (paste0("Forficula auricularia Maxent (point process)"))
+###############################################################################################################################
+## Reciprocal distribution modelling
 
-gplot(max3.pred) + geom_tile(aes(fill = value)) +
-  #scale_fill_gradient(low = 'white', high = 'dark blue') +
-  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
-  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  coord_equal()+
-  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
-  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="grey", size=2)+
-  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
-  geom_point (data=sites, aes (long, lat), colour="green", size=2)+
-  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle (paste0("Forficula auricularia Maxent (point process)"))
 
-gplot(wetMap) + geom_tile(aes(fill = value), alpha=0.8) +
-  scale_fill_gradient(low = 'white', high = 'dark blue') +
-  #scale_fill_viridis(option="magma", begin=0.0, direction=1)+
-  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  coord_equal()+
-  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
-  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
-  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="red", size=2)+
- # geom_point (data=sites, aes (long, lat), colour="green", size=2)+
-  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle (paste0("Association with rainfaill (400 mm)"))
+# same as before, except now we only use the background thats everywhere but Australia
+# selection of variables and model conditions is all done prior
+# this is see how a subset of the distribution data can reciprocally model across
+# we expect that Australia will underpredict the global distribution
 
-gplot(Australia[[9]]) + geom_tile(aes(fill = value), alpha=0.9) +
-  #scale_fill_gradient(low = 'white', high = 'dark blue') +
-  scale_fill_viridis(option="viridis", begin=0.0, direction=-1)+
-  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
-  coord_equal()+
-  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
-  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
-  #geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
-  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="red", size=2)+
-  geom_point (data=sites, aes (long, lat), colour="red", size=2)+
-  geom_point (data=quarrell_dist , aes (decimalLongitude, decimalLatitude), colour="red", size=2)+
-  #geom_point (data=sites, aes (long, lat), colour="green", size=2)+
-  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
-  ggtitle (paste0("Forficula auricularia HII index"))
+background.ras <- nat_ras
+background <- as.data.frame(randomPoints(background.ras, 40000))
+background$pa <- 0
+background.df <- as.data.frame(extract (biovar[[final_vars]], background[,1:2]))
+bgDF <- cbind (background, background.df)
+
+in_or_out <- extract(background.ras, sppDF[,1:2])
+pres.env <- sppDF[,c(final_vars)][which (in_or_out==1),]
+
+bg.env <- background.df
+pbg.env <- rbind(pres.env, bg.env)
+pbg.which <- c(rep(1, nrow(pres.env)), rep(0, nrow(bg.env)))
+
+Glob2Aus <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/Glob2Aus',sep=""),
+                  args=c("beta_threshold=-1", 
+                         "-P", #response curves
+                         "noautofeature", 
+                         "nothreshold", 
+                         "noproduct",
+                         "maximumbackground=40000",
+                         "noaddsamplestobackground",  
+                         "noremoveduplicates",
+                         "replicates=10",
+                         "replicatetype=crossvalidate"))
+
+Glob2Aus.pred <- predict(Glob2Aus, biovar, args="outputformat=logistic",
+                     filename=paste(wd, '/Glob2Aus/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                     progress="text")
+
+### Aus to Global
+
+background.ras <- inv_ras
+background <- as.data.frame(randomPoints(background.ras, 40000))
+background$pa <- 0
+background.df <- as.data.frame(extract (biovar[[final_vars]], background[,1:2]))
+bgDF <- cbind (background, background.df)
+
+in_or_out <- extract(background.ras, sppDF[,1:2])
+pres.env <- sppDF[,c(final_vars)][which (in_or_out==1),]
+
+bg.env <- background.df
+pbg.env <- rbind(pres.env, bg.env)
+pbg.which <- c(rep(1, nrow(pres.env)), rep(0, nrow(bg.env)))
+
+Aus2Glob <- maxent(x=pbg.env, p=pbg.which, path=paste(wd,'/Aus2Glob',sep=""),
+                   args=c("beta_threshold=-1", 
+                          "-P", #response curves
+                          "noautofeature", 
+                          "nothreshold", 
+                          "noproduct",
+                          "maximumbackground=40000",
+                          "noaddsamplestobackground",  
+                          "noremoveduplicates"))
+
+Aus2Glob.pred <- predict(Aus2Glob, biovar, args="outputformat=logistic",
+                         filename=paste(wd, '/Aus2Glob/pred.asc', sep=""), format="ascii", overwrite=TRUE,
+                         progress="text")
+
 
 ################################################################################################################################
 ## Niche shift analysis
 
+## Coding - Hypothesis 1 - Australia vs Global
+locs.dat <- (sppP[,1:2])
+coordinates (locs.dat) <- ~x+y
+wrld_simpl@proj4string <- CRS("+proj=longlat +datum=WGS84")
+locs.dat@proj4string <- CRS("+proj=longlat +datum=WGS84")
+
+code <- extract (Australia[[1]], locs.dat)
+code[is.na(code)] <- 0
+code[code!=0] <- 1
+
+sppP$code <- code
+
 library (ecospat)
 
-occ.sp1 <- sppDF[sppP$code==0,]
-occ.sp2 <- sppDF[sppP$code==1,]
+occ.sp1 <- sppDF[sppP$code==0,c("x", "y", "pa", final_vars)]
+occ.sp2 <- sppDF[sppP$code==1,c("x", "y", "pa", final_vars)]
 
 occ.sp1 <- occ.sp1[complete.cases(occ.sp1),]
 occ.sp2 <- occ.sp2[complete.cases(occ.sp2),]
 
 x1 <- randomPoints(nat_ras, 10000)
-clim1 <- as.data.frame(cbind(x1,(extract(biovar, x1))))
+clim1 <- as.data.frame(cbind(x1,(extract(biovar[[final_vars]], x1))))
 clim1 <- clim1[complete.cases(clim1),]
 
 x2 <- randomPoints(inv_ras, 10000)
-clim2 <- as.data.frame(cbind(x2,(extract(biovar, x2))))
+clim2 <- as.data.frame(cbind(x2,(extract(biovar[[final_vars]], x2))))
 clim2 <- clim2[complete.cases(clim2),]
 
 clim1$pa <- 0
 clim2$pa <- 0
 
-#clim1 <- clim1[,c(1,2,11,3,4,5,6,7,8, 9, 10, 12)]
-#clim2 <- clim2[,c(1,2,11,3,4,5,6,7,8, 9, 10, 12)]
-
-#clim1 <- clim1[,c(1,2,11,5,6,7,9,12)]
+occ.sp1$code <- NULL
+occ.sp2$code <- NULL
 
 inv <- rbind (occ.sp2, clim2)
 nat <- rbind (occ.sp1, clim1)
 
-## just on climate....
+## just on climate.... hii is the last column
 inv <- inv[,1:ncol(inv)-1]
 nat <- nat[,1:ncol(nat)-1]
 
-#inv <- inv[,c(1, 2, 3, 6, 7, 8, 10, 12)]
-#nat <- nat[,c(1, 2, 3, 6, 7, 8, 10, 12)]
+
 
 pca.env <- dudi.pca(rbind(nat,inv)[,4:ncol(nat)],scannf=F,nf=2)
 
@@ -567,7 +576,7 @@ ecospat.plot.overlap.test(sim.test, "D", "Similarity")
 
 
 niche.dyn <- ecospat.niche.dyn.index(grid.clim.nat, grid.clim.inv, intersection = 0.1)
-
+niche.dyn 
 ecospat.plot.niche.dyn (grid.clim.nat, grid.clim.inv, quant=0.25, interest=2, title= "Niche Overlap", name.axis1="PC1", name.axis2="PC2")
 ecospat.shift.centroids(scores.sp.nat, scores.sp.inv, scores.clim.nat, scores.clim.inv)
 
@@ -587,5 +596,162 @@ ecospat.plot.niche.dyn(grid.clim.t.nat, grid.clim.t.inv, quant=0, interest=2, ti
                        name.axis1=paste(names(nat[i])))
 }
 
+### This next part is a bit messy, due to the way the previous analyses were setup..
+
+### Hypthoesis 2. Australia broad and Australia grains are different
+
+sppAus <- as.data.frame(rasterToPoints(sppR))
+
+locs.dat <- as.data.frame(sppAus[,1:2])
+coordinates (locs.dat) <- ~x+y
+wrld_simpl@proj4string <- CRS("+proj=longlat +datum=WGS84")
+locs.dat@proj4string <- CRS("+proj=longlat +datum=WGS84")
+
+code <- extract (Australia[[1]], locs.dat)
+code[is.na(code)] <- 1
+code[code!=1] <- 0
+
+sppAus$code <- code
+
+sppAus <- sppAus[sppAus$code == 0,]
+
+sppGrains <- as.data.frame(rasterToPoints(sppG))
+sppGrains$code <- 1
+
+sppAus <- rbind (sppAus, sppGrains)
+
+AusDF <- merge(sppAus, sppDF, by=c("x", "y"))
+
+AusDF$code.y <- NULL
+colnames(AusDF)[which(names(AusDF) == "code.x")] <- "code"
+
+occ.sp1 <- AusDF[sppAus$code==0,] ## Other Australia
+occ.sp2 <- AusDF[sppAus$code==1,] ## Grains
+
+occ.sp1 <- occ.sp1[complete.cases(occ.sp1),]
+occ.sp2 <- occ.sp2[complete.cases(occ.sp2),]
+
+occ.sp1$code <- NULL
+occ.sp2$code <- NULL
+occ.sp1$layer <- NULL
+occ.sp2$layer <- NULL
+
+gplot(max2.pred) + geom_tile(aes(fill = value)) +
+  #scale_fill_gradient(low = 'white', high = 'dark blue') +
+  scale_fill_viridis(option="magma", begin=0.0, direction=-1)+
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  geom_point(data=occ.sp1, aes(x,y), colour="blue", size=2, alpha=0.5)+
+  geom_point(data=occ.sp2, aes(x,y), colour="green", size=2, alpha=0.5)+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
+  ggtitle (paste0("Forficula auricularia Maxent (point process)"))
 
 
+
+x1 <- randomPoints(Australia, 10000)
+clim1 <- as.data.frame(cbind(x1,(extract(biovar, x1))))
+clim1 <- clim1[complete.cases(clim1),]
+
+x2 <- randomPoints(Australia, 10000)
+clim2 <- as.data.frame(cbind(x2,(extract(biovar, x2))))
+clim2 <- clim2[complete.cases(clim2),]
+
+clim1$pa <- 0
+clim2$pa <- 0
+
+#clim1 <- clim1[,c(1,2,11,3,4,5,6,7,8, 9, 10, 12)]
+#clim2 <- clim2[,c(1,2,11,3,4,5,6,7,8, 9, 10, 12)]
+
+#clim1 <- clim1[,c(1,2,11,5,6,7,9,12)]
+
+inv <- rbind (occ.sp2, clim2)
+nat <- rbind (occ.sp1, clim1)
+
+## just on climate....
+inv <- inv[,1:ncol(inv)-1]
+nat <- nat[,1:ncol(nat)-1]
+
+#inv <- inv[,c(1, 2, 3, 6, 7, 8, 10, 12)]
+#nat <- nat[,c(1, 2, 3, 6, 7, 8, 10, 12)]
+
+pca.env <- dudi.pca(rbind(nat,inv)[,4:ncol(nat)],scannf=F,nf=2)
+
+ecospat.plot.contrib(contrib=pca.env$co, eigen=pca.env$eig)
+
+scores.globclim <- pca.env$li
+
+scores.sp.nat <- suprow(pca.env,nat[which(nat[,3]==1),4:ncol(nat)])$li
+scores.sp.inv <- suprow(pca.env,inv[which(inv[,3]==1),4:ncol(nat)])$li
+
+scores.clim.nat <-suprow(pca.env,nat[,4:ncol(nat)])$li
+scores.clim.inv <-suprow(pca.env,inv[,4:ncol(nat)])$li
+
+grid.clim.nat <- ecospat.grid.clim.dyn (glob=scores.globclim,
+                                        glob1=scores.clim.nat,
+                                        sp=scores.sp.nat, R=100,
+                                        th.sp=0)
+
+grid.clim.inv <- ecospat.grid.clim.dyn(glob=scores.globclim,
+                                       glob1=scores.clim.inv,
+                                       sp=scores.sp.inv, R=100,
+                                       th.sp=0)
+
+D.overlap <- ecospat.niche.overlap(grid.clim.nat, grid.clim.inv, cor=T)$D
+D.overlap
+
+
+## boost the reps up to 100 for final
+eq.test <- ecospat.niche.equivalency.test(grid.clim.nat, grid.clim.inv,rep=10, alternative = "greater")
+sim.test <- ecospat.niche.similarity.test (grid.clim.nat, grid.clim.inv, rep=10, alternative = "greater",rand.type=2)
+ecospat.plot.overlap.test(eq.test, "D", "Equivalency")
+ecospat.plot.overlap.test(sim.test, "D", "Similarity")
+
+
+niche.dyn <- ecospat.niche.dyn.index(grid.clim.nat, grid.clim.inv, intersection = 0.1)
+niche.dyn
+
+ecospat.plot.niche.dyn (grid.clim.nat, grid.clim.inv, quant=0.25, interest=2, title= "Niche Overlap", name.axis1="PC1", name.axis2="PC2")
+ecospat.shift.centroids(scores.sp.nat, scores.sp.inv, scores.clim.nat, scores.clim.inv)
+
+
+
+##### look at null model and associations with HII and rainfall
+
+null_spp <- randomPoints(background.ras, nrow(sppDF))
+null_sppDF <- as.data.frame(extract(biovar, null_spp))
+null_sppDF <- cbind (null_spp, null_sppDF)
+null_sppDF$species <- "Null"
+
+sppDF2 <- sppDF
+sppDF2$pa <-NULL
+sppDF2$species <- "Actual"
+
+dens_data <- rbind (sppDF2, null_sppDF)
+
+dens_data <- melt(dens_data, id.vars = c("x", "y", "species"))
+
+ggplot (dens_data)+
+  geom_density(aes(x=value, fill=species), alpha=0.5)+
+  facet_wrap(~variable, scales="free")
+
+ggplot (dens_data[dens_data$variable=="hii_10min",])+
+  geom_density(aes(x=value, fill=species), alpha=0.5)
+
+wetMap <- bioclimall[[12]]
+wetMap <- crop (wetMap, Australia[[1]])
+wetMap <- reclassify (wetMap, c(-Inf, 400, NA, 400, Inf, 1))
+
+gplot(wetMap) + geom_tile(aes(fill = value), alpha=0.8) +
+  scale_fill_gradient(low = 'white', high = 'dark blue') +
+  #scale_fill_viridis(option="magma", begin=0.0, direction=1)+
+  geom_path (data=wrld_simpl, aes(x=long, y=lat, group=group))+
+  coord_equal()+
+  scale_x_continuous(expand = c(0,0), limits= c(112, 155)) +
+  scale_y_continuous(expand = c(0,0), limits= c(-45, -10))+
+  geom_point (data=this.dat.abs , aes (decimalLongitude, decimalLatitude), colour="blue", size=2)+
+  geom_point (data=this.dat.pres , aes (decimalLongitude, decimalLatitude), colour="red", size=2)+
+  # geom_point (data=sites, aes (long, lat), colour="green", size=2)+
+  #geom_text(aes(label=sites$site),hjust=0, vjust=0)+
+  ggtitle (paste0("Association with rainfaill (400 mm)"))
