@@ -209,10 +209,15 @@ library (reshape2)
 library (ggplot2)
 lifecycle <- read.csv ("./data/lifecycle_data.csv")
 
-lifecycle <- lifecycle[,c("fieldID", "date.end","eurearwigAM", "eurearwigAF", "eurearwigAG",
+lifecycle <- lifecycle[,c("fieldID", "date.end", "trap", "eurearwigAM", "eurearwigAF", "eurearwigAG",
                           "X1instar", "X2instar", "X3instar", "X4instar")]
 
-lifecycle <- melt (lifecycle, id.vars = c("fieldID", "date.end"))
+lifecycle$adult <- lifecycle$eurearwigAM + lifecycle$eurearwigAF + lifecycle$eurearwigAG
+lifecycle$eurearwigAM <- NULL
+lifecycle$eurearwigAF <- NULL
+lifecycle$eurearwigAG <- NULL
+
+lifecycle <- melt (lifecycle, id.vars = c("fieldID", "date.end", "trap"))
 
 lifecycle$date.end <- as.Date(lifecycle$date.end, "%d/%m/%Y")
 
@@ -220,7 +225,7 @@ lifecycle <- lifecycle[which(!is.na(lifecycle$date.end)),]
 
 thoona <- lifecycle[lifecycle$fieldID == "Thoona",]
 
-thoona <- thoona[thoona$value > 0,]
+#thoona <- thoona[thoona$value > 0,]
 
 
 
@@ -229,12 +234,14 @@ thoona <- aggregate(thoona$value,
                Stage = thoona$variable),
           sum)
 
+ggplot (thoona, aes(Date, x, fill=Stage), colour=variable)+
+  geom_bar(stat="identity")
+
 thoona
 ggplot (thoona, aes(date.end, value, fill=variable), colour=variable)+
   geom_point(aes(colour=variable))
 
-ggplot (thoona, aes(date.end, value, fill=variable), colour=variable)+
-  geom_bar(stat="identity")
+
 
 
 ## calculatue GDD in reverse from the date 
