@@ -3,9 +3,11 @@
 ## Matt Hill 2018
 ## Use and distribute as required..
 ##############################################################################################################
-
+library (ggplot2)
+library (viridis)
+library(dplyr)
 ## Set trial location (Thoona or Elmore)
-trial <- "Thoona"
+trial <- "Elmore"
 
 
 ## house keeping per trial
@@ -117,7 +119,7 @@ return (out)
 }
 
 ##########33 RUN THE MODELLLLLS
-randates <- runif (1000, min=begin.date-2, max=begin.date+2)
+randates <- runif (100, min=begin.date-2, max=begin.date+2)
 
 
 outdata <- list()
@@ -168,18 +170,18 @@ idx <- idx+1
 
 all_data <- do.call("rbind", outdata)
 
-library (ggplot2)
-library (viridis)
+
 ggplot (all_data, aes(x=Date, y=CGDD))+
   geom_point(aes(colour=Stage), alpha=0.2, size=2)+
   scale_color_viridis(discrete = TRUE)+
-  stat_smooth(method="loess")
+  stat_smooth(method="loess")+
+  ggtitle(paste0(trial, " with replicates = ", length(randates)))
 
 ggplot (all_data, aes(x=Date, y=CGDD))+
   geom_boxplot(aes(colour=Stage), alpha=0.2, size=2)+
   scale_color_viridis(discrete = TRUE)
 
-library(dplyr)
+
 out_dates <- all_data %>%
   group_by(Stage) %>%
   summarise(max=max(Date), min=min(Date), mean=mean(Date), spread=max(Date)-min(Date))
